@@ -108,8 +108,10 @@ ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin1234')
 ADMIN_LINE_USER_ID = os.environ.get('ADMIN_LINE_USER_ID', '')  # 後台管理員的 LINE User ID（搶單成功時收通知）
 AUTO_DISPATCH = os.environ.get('AUTO_DISPATCH', '0') == '1'   # 設為 1 時，客人送出預約後自動發布搶單
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')  # Google Maps API Key（用於多點距離計算）
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')             # OpenAI API Key（用於 AI 客服對話）
 
 user_sessions = {}
+ai_chat_history = {}   # { user_id: [ {role, content}, ... ] }  同對話記憶
 
 def get_vehicles():
     return VehicleType.query.filter_by(active=True).order_by(VehicleType.sort_order).all()
@@ -889,20 +891,51 @@ def handle_message(event):
     session = user_sessions.get(user_id, {})
     step = session.get('step', '')
 
+    # ── 特殊指令（優先處理）────────────────────────────────────────
     if text in ['我的ID', 'myid', 'MY ID']:
         reply_text(event.reply_token, f'您的 LINE User ID：\n{user_id}\n\n請將此 ID 提供給管理員，設定後即可接收搶單通知。')
         return
-    if text in ['預約', '訂車', '機場接送', '開始']:
+
+    if text == '取消':
+        user_sessions.pop(user_id, None)
+        ai_chat_history.pop(user_id, None)
+        reply_text(event.reply_token, '已取消操作。')
+        send_main_menu_after(event.reply_token, user_id)
+        return
+
+    # ── 觸發主選單關鍵字 ──────────────────────────────────────────
+    if text in ['開始', 'hi', 'Hi', 'HI', 'hello', 'Hello', '你好', '哈囉'] and not step:
+        send_main_menu(event.reply_token)
+        return
+
+    # ── 預約相關關鍵字（直接跳入預約流程）──────────────────────────
+    if text in ['預約', '訂車', '機場接送', '開始預約']:
         user_sessions[user_id] = {'step': 'choose_service'}
+        ai_chat_history.pop(user_id, None)
         send_service_menu(event.reply_token)
         return
+
     if text == '查詢訂單':
         user_sessions[user_id] = {'step': 'query_name'}
         reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
         return
-    if text == '取消':
-        user_sessions.pop(user_id, None)
-        reply_text(event.reply_token, '已取消操作。\n\n輸入「預約」開始新的預約。')
+
+    # ── AI 聊天模式 ────────────────────────────────────────────────
+    if step == 'ai_chat':
+        # 在 AI 模式中，若客人說要預約就切換流程
+        if any(kw in text for kw in ['預約', '訂車', '我要訂', '我想訂', '幫我訂']):
+            user_sessions[user_id] = {'step': 'choose_service'}
+            ai_chat_history.pop(user_id, None)
+            reply_text(event.reply_token, '好的！幫您切換到預約流程')
+            send_service_menu(event.reply_token)
+            return
+        if any(kw in text for kw in ['查詢', '我的訂單', '訂單狀態']):
+            user_sessions[user_id] = {'step': 'query_name'}
+            reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
+            return
+        # 一般 AI 對話
+        ai_reply = ask_openai(user_id, text)
+        reply_text(event.reply_token, ai_reply)
         return
 
     if step == 'query_name':
@@ -1046,7 +1079,13 @@ def handle_message(event):
             send_order_confirm(event.reply_token, session)
 
     else:
-        send_main_menu(event.reply_token)
+        # 沒有進行中流程 → AI 回覆（若有 OpenAI Key）或顯示主選單
+        if OPENAI_API_KEY:
+            user_sessions[user_id] = {'step': 'ai_chat'}
+            ai_reply = ask_openai(user_id, text)
+            reply_text(event.reply_token, ai_reply)
+        else:
+            send_main_menu(event.reply_token)
 
 @handler.add(PostbackEvent)
 def handle_postback(event):
@@ -1226,6 +1265,114 @@ def send_pet_menu(reply_token):
         ]}
     }
     send_flex(reply_token, '寵物同行', bubble)
+
+# ── OpenAI AI 客服 ────────────────────────────────────────────────────
+AI_SYSTEM_PROMPT = """你是「機場接送服務」的親切客服助理，名字叫「小飛」。
+你的工作是：
+1. 用繁體中文，以親切、專業的語氣回答客人關於機場接送的問題
+2. 回答範圍包括：車型介紹、費用說明、預約流程、注意事項、行李規定等
+3. 當客人想要預約時，引導他們輸入「預約」開始正式預約流程
+4. 可以閒聊，但以服務為主
+
+費用資訊（參考）：
+- 基本車資依區域不同，例如台中到桃園機場約 NT$2,200
+- 夜間服務費（22:00-06:00）加收 NT$200
+- 舉牌服務加收 NT$300
+- 兒童安全座椅每張加收 NT$200（最多2張）
+- 寵物同行加收 NT$1,100
+- 七天內預約加收 NT$300，三天內臨時單加收 NT$300
+- 假日/旺季期間加收 NT$300
+- 多點停靠依距離加收 NT$200–500
+
+車型選擇：
+- 標準四座轎車：最多4人
+- 商務六座廂型車：最多6人
+- 豪華七座SUV：最多7人
+- 九座廂型車：最多9人（寵物同行自動升級）
+
+重要提醒：
+- 回答要簡潔，避免過長
+- 如果客人詢問具體訂單狀態，請他輸入「查詢訂單」
+- 如果客人想要預約，請他輸入「預約」
+- 不確定的事情不要亂答，請客人聯繫客服確認
+"""
+
+def ask_openai(user_id, user_message):
+    """呼叫 OpenAI API，帶入對話記憶，回傳 AI 回應文字"""
+    if not OPENAI_API_KEY:
+        return '目前 AI 客服功能未啟用，請輸入「預約」開始預約，或輸入「查詢訂單」查詢訂單。'
+
+    # 取得或初始化對話記憶（最多保留 10 輪）
+    history = ai_chat_history.get(user_id, [])
+    history.append({'role': 'user', 'content': user_message})
+    if len(history) > 20:
+        history = history[-20:]  # 保留最近 20 則
+
+    messages = [{'role': 'system', 'content': AI_SYSTEM_PROMPT}] + history
+
+    try:
+        resp = requests.post(
+            'https://api.openai.com/v1/chat/completions',
+            headers={
+                'Authorization': f'Bearer {OPENAI_API_KEY}',
+                'Content-Type': 'application/json',
+            },
+            json={
+                'model': 'gpt-4o-mini',
+                'messages': messages,
+                'max_tokens': 500,
+                'temperature': 0.7,
+            },
+            timeout=15
+        )
+        data = resp.json()
+        ai_reply = data['choices'][0]['message']['content'].strip()
+        history.append({'role': 'assistant', 'content': ai_reply})
+        ai_chat_history[user_id] = history
+        return ai_reply
+    except Exception as e:
+        print(f'OpenAI error: {e}')
+        return '抱歉，AI 客服暫時無法回應，請稍後再試，或輸入「預約」開始預約流程。'
+
+
+def send_main_menu(reply_token):
+    """主選單：選擇 AI 聊天 或 開始預約"""
+    bubble = {
+        "type": "bubble",
+        "header": {
+            "type": "box", "layout": "vertical", "backgroundColor": "#1A2B4A",
+            "contents": [
+                {"type": "text", "text": "機場接送服務", "color": "#FFFFFF", "size": "xl", "weight": "bold"},
+                {"type": "text", "text": "您好！請問需要什麼服務？", "color": "#8BA3C7", "size": "sm", "margin": "sm"}
+            ]
+        },
+        "body": {
+            "type": "box", "layout": "vertical", "spacing": "md",
+            "contents": [
+                {
+                    "type": "button",
+                    "action": {"type": "postback", "label": "開始預約", "data": "start_booking"},
+                    "style": "primary", "color": "#4A9B8F",
+                },
+                {
+                    "type": "button",
+                    "action": {"type": "postback", "label": "詢問客服 / 了解服務", "data": "start_ai_chat"},
+                    "style": "secondary",
+                },
+                {
+                    "type": "button",
+                    "action": {"type": "postback", "label": "查詢我的訂單", "data": "query_order_start"},
+                    "style": "secondary",
+                },
+            ]
+        }
+    }
+    send_flex(reply_token, '機場接送服務', bubble)
+
+def send_main_menu_after(reply_token, user_id=None):
+    """送出主選單（用 reply_token）"""
+    send_main_menu(reply_token)
+
 
 def send_extra_stops_menu(reply_token):
     """詢問是否有多點停靠"""
