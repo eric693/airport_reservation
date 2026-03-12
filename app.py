@@ -1,4 +1,6 @@
 import os
+import json
+import base64
 import threading
 import time
 import requests
@@ -187,6 +189,44 @@ def make_info_row(label, value):
         {"type": "text", "text": label, "size": "sm", "color": "#888888", "flex": 3},
         {"type": "text", "text": str(value), "size": "sm", "color": "#333333", "flex": 5, "wrap": True}
     ]}
+
+def parse_date(text):
+    """支援多種日期格式，回傳 YYYY-MM-DD 字串，失敗回傳 None"""
+    text = text.strip().replace('。', '').replace(' ', '')
+    now = datetime.now()
+    formats = [
+        '%Y-%m-%d',   # 2025-06-15
+        '%Y/%m/%d',   # 2025/06/15
+        '%m/%d',      # 06/15
+        '%m-%d',      # 06-15
+    ]
+    for fmt in formats:
+        try:
+            dt = datetime.strptime(text, fmt)
+            if fmt in ('%m/%d', '%m-%d'):
+                dt = dt.replace(year=now.year)
+                if dt.date() < now.date():
+                    dt = dt.replace(year=now.year + 1)
+            return dt.strftime('%Y-%m-%d')
+        except ValueError:
+            pass
+    # 純數字：615 → 06/15，20250615 → 2025-06-15
+    digits = ''.join(filter(str.isdigit, text))
+    if len(digits) == 8:
+        try:
+            dt = datetime.strptime(digits, '%Y%m%d')
+            return dt.strftime('%Y-%m-%d')
+        except ValueError:
+            pass
+    if len(digits) == 4:
+        try:
+            dt = datetime.strptime(digits, '%m%d').replace(year=now.year)
+            if dt.date() < now.date():
+                dt = dt.replace(year=now.year + 1)
+            return dt.strftime('%Y-%m-%d')
+        except ValueError:
+            pass
+    return None
 
 def is_night_time(time_str):
     try:
@@ -613,8 +653,16 @@ def handle_postback(event):
         user_sessions[user_id] = session
         reply_text(event.reply_token, '請輸入備註事項（若無請輸入「無」）：')
 
-    elif data == 'confirm_order':
-        save_order(event.reply_token, session, user_id)
+    elif data == 'confirm_order' or data.startswith('confirm_order:'):
+        # 優先從 postback data 解碼 session，避免 worker 重啟後 memory session 丟失
+        if ':' in data:
+            decoded = decode_session(data.split(':', 1)[1])
+            if decoded:
+                session = decoded
+        if not session or not session.get('name'):
+            reply_text(event.reply_token, '預約資料已逾時，請輸入「預約」重新填寫。')
+        else:
+            save_order(event.reply_token, session, user_id)
         user_sessions.pop(user_id, None)
 
     elif data == 'cancel_order':

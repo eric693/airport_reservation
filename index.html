@@ -92,6 +92,9 @@
   <nav class="sidebar-nav">
     <div class="nav-label">功能選單</div>
     <a href="/admin" class="nav-item active">訂單管理</a>
+    <a href="/admin/drivers" class="nav-item">司機管理</a>
+    <a href="/admin/vehicles" class="nav-item">車型管理</a>
+    <a href="/admin/airports" class="nav-item">機場管理</a>
   </nav>
   <div class="sidebar-footer">管理員後台 v1.0</div>
 </div>
@@ -189,7 +192,7 @@
           </td>
           <td>{{ order.passengers }}人 / {{ order.luggage }}件</td>
           <td>
-            <span class="badge badge-{{ {'待確認':'pending','已確認':'confirmed','已完成':'completed','已取消':'cancelled'}[order.status] }}">
+            <span class="badge badge-{{ {'待確認':'pending','已確認':'confirmed','已完成':'completed','已取消':'cancelled'}.get(order.status, 'pending') }}">
               {{ order.status }}
             </span>
           </td>
