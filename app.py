@@ -47,6 +47,10 @@ with app.app_context():
         "ALTER TABLE dispatch_jobs ADD COLUMN IF NOT EXISTS deadline TIMESTAMP",
         "ALTER TABLE dispatch_jobs ADD COLUMN IF NOT EXISTS note VARCHAR(200) DEFAULT ''",
         "ALTER TABLE dispatch_jobs ADD COLUMN IF NOT EXISTS notify_customer BOOLEAN DEFAULT TRUE",
+        # 報價三張表（確保一定存在，就算 database.py 是舊版也能自動建）
+        "CREATE TABLE IF NOT EXISTS price_rules (id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL, airport_keyword VARCHAR(50) DEFAULT '', region_keyword VARCHAR(100) DEFAULT '', base_price INTEGER DEFAULT 0, note TEXT DEFAULT '', active BOOLEAN DEFAULT TRUE, sort_order INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS price_surcharges (id SERIAL PRIMARY KEY, key VARCHAR(50) UNIQUE NOT NULL, name VARCHAR(50) NOT NULL, amount INTEGER DEFAULT 0, enabled BOOLEAN DEFAULT TRUE, note VARCHAR(100) DEFAULT '')",
+        "CREATE TABLE IF NOT EXISTS holiday_surcharges (id SERIAL PRIMARY KEY, name VARCHAR(50) DEFAULT '', date_from VARCHAR(10) NOT NULL, date_to VARCHAR(10) NOT NULL, amount INTEGER DEFAULT 300, active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT NOW())",
     ]
     with db.engine.connect() as _conn:
         for _sql in _migrations:
@@ -1194,16 +1198,56 @@ def _handle_postback_inner(event):
         user_sessions.pop(user_id, None)
         reply_text(event.reply_token, '已取消預約。\n\n輸入「預約」重新開始。')
 
-# ── Menu senders ─────────────────────────────────────────────────────
-def send_main_menu(reply_token):
-    reply_text(reply_token,
-        '歡迎使用機場接送服務！\n\n'
-        '請輸入以下指令：\n'
-        '「預約」- 開始預約接送\n'
-        '「查詢訂單」- 查詢訂單狀態\n'
-        '「取消」- 取消目前操作'
-    )
+    # ── 主選單按鈕 ──────────────────────────────────────────────────
+    elif data == 'start_booking':
+        user_sessions[user_id] = {'step': 'choose_service'}
+        send_service_menu(event.reply_token)
 
+    elif data == 'start_ai_chat':
+        user_sessions[user_id] = {'step': 'ai_chat'}
+        reply_text(event.reply_token,
+            '您好！我是客服助理小飛 ✈️\n\n'
+            '有任何關於機場接送的問題都可以問我！\n'
+            '例如：費用怎麼算？可以帶寵物嗎？\n\n'
+            '想要預約請說「預約」，查詢訂單請說「查詢訂單」。'
+        )
+
+    elif data == 'query_order_start':
+        user_sessions[user_id] = {'step': 'query_name'}
+        reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
+
+    # ── 多點停靠 ─────────────────────────────────────────────────────
+    elif data == 'no_extra_stops':
+        session['step'] = 'confirm'
+        user_sessions[user_id] = session
+        send_order_confirm(event.reply_token, session)
+
+    elif data == 'add_extra_stop':
+        session['step'] = 'input_extra_stop'
+        session.setdefault('extra_stops', [])
+        session.setdefault('extra_stop_fee', 0)
+        user_sessions[user_id] = session
+        stop_num = len(session.get('extra_stops', [])) + 1
+        reply_text(event.reply_token, f'請輸入第 {stop_num} 個停靠點地址：')
+
+    # ── 搶單 ─────────────────────────────────────────────────────────
+    elif data.startswith('grab:'):
+        job_id = int(data.split(':')[1])
+        handle_driver_grab(event.reply_token, user_id, job_id)
+
+    elif data.startswith('skip:'):
+        job_id = int(data.split(':')[1])
+        with app.app_context():
+            job = DispatchJob.query.get(job_id)
+            driver = Driver.query.filter_by(line_user_id=user_id).first()
+            if job and driver:
+                existing = DispatchResponse.query.filter_by(job_id=job_id, driver_id=driver.id).first()
+                if not existing:
+                    db.session.add(DispatchResponse(job_id=job_id, driver_id=driver.id, action='放棄'))
+                    db.session.commit()
+        reply_text(event.reply_token, '已略過此訂單。')
+
+# ── Menu senders ─────────────────────────────────────────────────────
 def send_service_menu(reply_token):
     bubble = {
         "type": "bubble",
@@ -1528,6 +1572,20 @@ def send_order_confirm(reply_token, session):
             ReplyMessageRequest(reply_token=reply_token,
                 messages=[FlexMessage(alt_text='預估報價與確認預約資料', contents=FlexContainer.from_dict(carousel))])
         )
+
+def decode_session(encoded):
+    """從 base64 解碼 session 資料"""
+    try:
+        return json.loads(base64.b64decode(encoded.encode()).decode())
+    except Exception:
+        return None
+
+def encode_session(session):
+    """將 session 編碼為 base64 字串"""
+    try:
+        return base64.b64encode(json.dumps(session, ensure_ascii=False).encode()).decode()
+    except Exception:
+        return ''
 
 def save_order(reply_token, session, user_id):
     with app.app_context():
