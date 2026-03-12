@@ -111,6 +111,9 @@
     <div class="nav-label">功能選單</div>
     <a href="/admin" class="nav-item">訂單管理</a>
     <a href="/admin/drivers" class="nav-item">司機管理</a>
+    <a href="/admin/vehicles" class="nav-item">車型管理</a>
+    <a href="/admin/airports" class="nav-item">機場管理</a>
+    <a href="/admin/dispatch" class="nav-item">搶單管理</a>
   </nav>
   <div class="sidebar-footer">管理員後台 v1.0</div>
 </div>
@@ -238,6 +241,66 @@
             </select>
             <button type="submit" class="btn btn-primary btn-full">更新狀態</button>
           </form>
+        </div>
+      </div>
+
+      <!-- 搶單模組 -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">搶單模組</div></div>
+        <div class="card-body">
+          {% if order.dispatch_job %}
+            <div style="margin-bottom:12px">
+              <div class="info-label">搶單狀態</div>
+              <div style="margin-top:6px">
+                <span class="badge {{'badge-confirmed' if order.dispatch_job.status == '已結單' else ('badge-pending' if order.dispatch_job.status == '開放搶單' else 'badge-cancelled')}}">
+                  {{ order.dispatch_job.status }}
+                </span>
+              </div>
+            </div>
+            {% if order.dispatch_job.winner %}
+            <div class="driver-card" style="margin-bottom:12px">
+              <div class="driver-card-label">搶到的司機</div>
+              <div class="driver-info-row"><span class="driver-info-key">姓名</span><span class="driver-info-val">{{ order.dispatch_job.winner.name }}</span></div>
+              <div class="driver-info-row"><span class="driver-info-key">搶單時間</span><span class="driver-info-val">{{ order.dispatch_job.grabbed_at.strftime('%Y-%m-%d %H:%M') if order.dispatch_job.grabbed_at else '—' }}</span></div>
+            </div>
+            {% endif %}
+            {% if order.dispatch_job.responses %}
+            <div style="margin-bottom:12px">
+              <div class="info-label" style="margin-bottom:6px">回應記錄（{{ order.dispatch_job.responses|length }} 位）</div>
+              {% for r in order.dispatch_job.responses %}
+              <div style="font-size:12px;padding:3px 0;color:#718096">
+                {{ r.driver.name }} —
+                {% if r.action == '搶單' %}
+                <span style="color:#2C7A73">{{ r.action }}</span>
+                {% else %}
+                <span style="color:#CC3333">{{ r.action }}</span>
+                {% endif %}
+                {{ r.responded_at.strftime('%H:%M') }}
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if order.dispatch_job.status == '開放搶單' %}
+            <form method="POST" action="/admin/dispatch/{{ order.dispatch_job.id }}/cancel">
+              <button type="submit" class="btn btn-danger btn-full" onclick="return confirm('確定取消搶單？')">取消搶單</button>
+            </form>
+            {% endif %}
+          {% else %}
+            <div style="color:#A0AEC0;font-size:13px;margin-bottom:16px">尚未發布搶單任務</div>
+            <form method="POST" action="/admin/order/{{ order.id }}/dispatch">
+              <label class="form-label">搶單備註（顯示給司機）</label>
+              <input type="text" name="dispatch_note" placeholder="例：需要大型行李廂、早班需準時" style="margin-bottom:12px">
+              <label class="form-label">搶到後自動通知客人司機資料</label>
+              <select name="notify_customer" style="margin-bottom:12px">
+                <option value="1">是</option>
+                <option value="0">否</option>
+              </select>
+              <button type="submit" class="btn btn-primary btn-full"> 發布搶單</button>
+            </form>
+            <div style="margin-top:10px;font-size:11px;color:#A0AEC0;line-height:1.6">
+              發布後所有啟用司機將收到 LINE 推播，第一個按「接單」的司機獲得此訂單。
+            </div>
+          {% endif %}
         </div>
       </div>
 

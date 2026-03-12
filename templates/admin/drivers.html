@@ -76,6 +76,9 @@
     <div class="nav-label">功能選單</div>
     <a href="/admin" class="nav-item">訂單管理</a>
     <a href="/admin/drivers" class="nav-item active">司機管理</a>
+    <a href="/admin/vehicles" class="nav-item">車型管理</a>
+    <a href="/admin/airports" class="nav-item">機場管理</a>
+    <a href="/admin/dispatch" class="nav-item">搶單管理</a>
   </nav>
   <div class="sidebar-footer">管理員後台 v1.0</div>
 </div>
@@ -106,6 +109,7 @@
           <th>車牌號碼</th>
           <th>車身顏色</th>
           <th>狀態</th>
+          <th>LINE User ID</th>
           <th>備註</th>
           <th>操作</th>
         </tr>
@@ -119,6 +123,7 @@
           <td>{{ driver.car_plate or '—' }}</td>
           <td>{{ driver.car_color or '—' }}</td>
           <td><span class="{{ 'badge-active' if driver.active else 'badge-inactive' }}">{{ '啟用' if driver.active else '停用' }}</span></td>
+          <td><span style="font-size:11px;color:#A0AEC0;font-family:monospace">{{ driver.line_user_id[:16]+'...' if driver.line_user_id and driver.line_user_id|length > 16 else (driver.line_user_id or '未設定') }}</span></td>
           <td class="sub-text">{{ driver.note or '—' }}</td>
           <td>
             <button class="btn btn-outline edit-btn"
@@ -129,7 +134,8 @@
               data-car_plate="{{ driver.car_plate | e }}"
               data-car_color="{{ driver.car_color | e }}"
               data-note="{{ driver.note | e }}"
-              data-active="{{ '1' if driver.active else '0' }}">編輯</button>
+              data-active="{{ '1' if driver.active else '0' }}"
+              data-lineid="{{ driver.line_user_id | e }}">編輯</button>
             <form method="POST" action="/admin/drivers/{{ driver.id }}/delete" style="display:inline;"
               onsubmit="return confirm('確定刪除司機？')">
               <button type="submit" class="btn btn-danger">刪除</button>
@@ -170,6 +176,11 @@
         <div class="form-group">
           <label>車身顏色</label>
           <input type="text" name="car_color" placeholder="白色">
+        </div>
+        <div class="form-group full">
+          <label>司機 LINE User ID <span style="font-weight:400;color:#A0AEC0">（用於搶單推播）</span></label>
+          <input type="text" name="line_user_id" placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+          <div style="font-size:11px;color:#A0AEC0;margin-top:4px">司機傳任意訊息給機器人後可在後台取得，或讓司機傳「我的ID」</div>
         </div>
         <div class="form-group full">
           <label>備註</label>
@@ -218,6 +229,10 @@
           </select>
         </div>
         <div class="form-group full">
+          <label>司機 LINE User ID</label>
+          <input type="text" name="line_user_id" id="edit_lineid" placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+        </div>
+        <div class="form-group full">
           <label>備註</label>
           <textarea name="note" id="edit_note"></textarea>
         </div>
@@ -242,6 +257,7 @@ document.querySelectorAll('.edit-btn').forEach(function(btn) {
     document.getElementById('edit_car_color').value = d.car_color;
     document.getElementById('edit_note').value = d.note;
     document.getElementById('edit_active').value = d.active;
+    document.getElementById('edit_lineid').value = d.lineid || '';
     document.getElementById('editModal').classList.add('show');
   });
 });

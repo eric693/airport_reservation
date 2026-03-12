@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>搶單管理 - 機場接送管理後台</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', sans-serif; background: #F4F6F8; color: #2D3748; }
+  .sidebar { position: fixed; top: 0; left: 0; width: 220px; height: 100vh; background: #1A2B4A; display: flex; flex-direction: column; }
+  .sidebar-header { padding: 24px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+  .sidebar-title { color: #FFFFFF; font-size: 16px; font-weight: 700; }
+  .sidebar-sub { color: #8BA3C7; font-size: 11px; margin-top: 3px; letter-spacing: 1px; }
+  .sidebar-accent { width: 32px; height: 3px; background: #4A9B8F; margin-top: 10px; }
+  .sidebar-nav { padding: 16px 0; flex: 1; }
+  .nav-label { padding: 8px 20px 4px; font-size: 10px; color: #8BA3C7; letter-spacing: 1px; text-transform: uppercase; }
+  .nav-item { display: block; padding: 10px 20px; color: #B8C8DC; font-size: 14px; text-decoration: none; transition: all 0.2s; }
+  .nav-item:hover, .nav-item.active { background: rgba(74,155,143,0.15); color: #FFFFFF; border-left: 3px solid #4A9B8F; }
+  .sidebar-footer { padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1); color: #8BA3C7; font-size: 12px; }
+  .main { margin-left: 220px; padding: 32px; min-height: 100vh; }
+  .page-header { margin-bottom: 28px; }
+  .page-title { font-size: 24px; font-weight: 700; color: #1A2B4A; }
+  .page-sub { color: #718096; font-size: 14px; margin-top: 4px; }
+  .card { background: #FFFFFF; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); overflow: hidden; margin-bottom: 24px; }
+  .card-header { padding: 16px 24px; border-bottom: 1px solid #EDF2F7; }
+  .card-title { font-size: 15px; font-weight: 600; color: #1A2B4A; }
+  table { width: 100%; border-collapse: collapse; }
+  th { padding: 12px 16px; text-align: left; font-size: 11px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; background: #F7FAFC; border-bottom: 1px solid #EDF2F7; }
+  td { padding: 14px 16px; font-size: 13px; color: #2D3748; border-bottom: 1px solid #EDF2F7; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #F7FAFC; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-open { background: #FEF0E7; color: #E05C00; }
+  .badge-closed { background: #E6F5F3; color: #2C7A73; }
+  .badge-cancelled { background: #EDF2F7; color: #A0AEC0; }
+  .btn { display: inline-block; padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 500; text-decoration: none; cursor: pointer; border: none; transition: all 0.2s; }
+  .btn-outline { background: transparent; color: #4A9B8F; border: 1px solid #4A9B8F; }
+  .btn-outline:hover { background: #4A9B8F; color: #FFFFFF; }
+  .sub-text { font-size: 12px; color: #A0AEC0; }
+  .response-count { display: inline-block; background: #EDF2F7; border-radius: 12px; padding: 2px 8px; font-size: 11px; color: #718096; margin-left: 4px; }
+  .empty-state { text-align: center; color: #A0AEC0; padding: 60px; }
+  .howto { background: #F0FAF8; border: 1px solid #C3E6E0; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+  .howto-title { font-size: 14px; font-weight: 600; color: #2C7A73; margin-bottom: 8px; }
+  .howto-steps { font-size: 13px; color: #4A5568; line-height: 2; }
+</style>
+</head>
+<body>
+<div class="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-title">機場接送管理</div>
+    <div class="sidebar-sub">AIRPORT TRANSFER SYSTEM</div>
+    <div class="sidebar-accent"></div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">功能選單</div>
+    <a href="/admin" class="nav-item">訂單管理</a>
+    <a href="/admin/drivers" class="nav-item">司機管理</a>
+    <a href="/admin/vehicles" class="nav-item">車型管理</a>
+    <a href="/admin/airports" class="nav-item">機場管理</a>
+    <a href="/admin/dispatch" class="nav-item active">搶單管理</a>
+  </nav>
+  <div class="sidebar-footer">管理員後台 v1.0</div>
+</div>
+
+<main class="main">
+  <div class="page-header">
+    <div class="page-title">搶單管理</div>
+    <div class="page-sub">發布搶單任務後，所有司機的 LINE 會同時收到推播通知</div>
+  </div>
+
+  <div class="howto">
+    <div class="howto-title"> 搶單流程說明</div>
+    <div class="howto-steps">
+      ① 至「訂單管理」開啟任意訂單 → 右側「搶單模組」點「發布搶單」<br>
+      ② 所有啟用且設有 LINE User ID 的司機同時收到推播<br>
+      ③ 第一個按「 我要接單」的司機獲得訂單，其他司機無法再搶<br>
+      ④ 搶到後系統自動將完整客戶資料傳給司機，並可選擇自動通知客人司機資訊
+    </div>
+  </div>
+
+  <div class="howto" style="background:#FEF0E7;border-color:#F5C699;">
+    <div class="howto-title" style="color:#E05C00;">️ 設定司機 LINE User ID</div>
+    <div class="howto-steps">
+      讓司機在 LINE Bot 中傳送「<strong>我的ID</strong>」，Bot 會回覆該司機的 LINE User ID<br>
+      複製後填入「司機管理」頁面的「LINE User ID」欄位即可
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">搶單任務記錄</div>
+    </div>
+    {% if jobs %}
+    <table>
+      <thead>
+        <tr>
+          <th>訂單</th>
+          <th>客戶</th>
+          <th>接送資訊</th>
+          <th>搶單狀態</th>
+          <th>搶到的司機</th>
+          <th>回應人數</th>
+          <th>發布時間</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr>
+          <td><strong>#{{ job.order_id }}</strong></td>
+          <td>
+            <div>{{ job.order.name }}</div>
+            <div class="sub-text">{{ job.order.phone }}</div>
+          </td>
+          <td>
+            <div>{{ job.order.booking_date }} {{ job.order.booking_time }}</div>
+            <div class="sub-text">{{ job.order.airport }}</div>
+          </td>
+          <td>
+            <span class="badge {{ 'badge-open' if job.status == '開放搶單' else ('badge-closed' if job.status == '已結單' else 'badge-cancelled') }}">
+              {{ job.status }}
+            </span>
+          </td>
+          <td>
+            {% if job.winner %}
+            <div>{{ job.winner.name }}</div>
+            <div class="sub-text">{{ job.grabbed_at.strftime('%H:%M') if job.grabbed_at else '' }}</div>
+            {% else %}
+            <span class="sub-text">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {{ job.responses|length }}
+            <span class="response-count">搶 {{ job.responses|selectattr('action','eq','搶單')|list|length }}</span>
+          </td>
+          <td class="sub-text">{{ job.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td><a href="/admin/order/{{ job.order_id }}" class="btn btn-outline">查看訂單</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">尚無搶單任務<br><br>至訂單詳情頁右側「搶單模組」發布</div>
+    {% endif %}
+  </div>
+</main>
+</body>
+</html>

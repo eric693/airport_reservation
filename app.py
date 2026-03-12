@@ -15,7 +15,7 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, PostbackEvent
 from apscheduler.schedulers.background import BackgroundScheduler
-from database import db, Order, Driver, VehicleType, AirportOption
+from database import db, Order, Driver, VehicleType, AirportOption, DispatchJob, DispatchResponse
 from functools import wraps
 
 app = Flask(__name__)
@@ -58,6 +58,8 @@ handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
 
 ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin1234')
+ADMIN_LINE_USER_ID = os.environ.get('ADMIN_LINE_USER_ID', '')  # 後台管理員的 LINE User ID（搶單成功時收通知）
+AUTO_DISPATCH = os.environ.get('AUTO_DISPATCH', '0') == '1'   # 設為 1 時，客人送出預約後自動發布搶單
 
 user_sessions = {}
 
@@ -276,9 +278,14 @@ def admin_order_detail(order_id):
 @admin_required
 def admin_update_status(order_id):
     order = Order.query.get_or_404(order_id)
-    order.status = request.form.get('status')
+    new_status = request.form.get('status')
+    order.status = new_status
     db.session.commit()
-    flash('訂單狀態已更新')
+    # 後台手動將狀態改為「已確認」且尚無搶單任務 → 詢問是否要發布搶單（透過 flash 提示）
+    if new_status == '已確認' and not order.dispatch_job:
+        flash('訂單已確認。若要發布搶單，請至右側「搶單模組」操作。')
+    else:
+        flash('訂單狀態已更新')
     return redirect(url_for('admin_order_detail', order_id=order_id))
 
 @app.route('/admin/order/<int:order_id>/assign', methods=['POST'])
@@ -335,6 +342,7 @@ def admin_add_driver():
         car_plate=request.form.get('car_plate', ''),
         car_color=request.form.get('car_color', ''),
         note=request.form.get('note', ''),
+        line_user_id=request.form.get('line_user_id', ''),
     )
     db.session.add(driver)
     db.session.commit()
@@ -351,6 +359,7 @@ def admin_edit_driver(driver_id):
     driver.car_plate = request.form.get('car_plate', '')
     driver.car_color = request.form.get('car_color', '')
     driver.note = request.form.get('note', '')
+    driver.line_user_id = request.form.get('line_user_id', '')
     driver.active = request.form.get('active') == '1'
     db.session.commit()
     flash('司機資料已更新')
@@ -451,6 +460,104 @@ def admin_delete_airport(aid):
     flash('機場已刪除')
     return redirect(url_for('admin_airports'))
 
+# ── Admin: Dispatch (搶單) ───────────────────────────────────────────
+@app.route('/admin/order/<int:order_id>/dispatch', methods=['POST'])
+@admin_required
+def admin_create_dispatch(order_id):
+    """建立搶單任務並推播給所有啟用司機"""
+    order = Order.query.get_or_404(order_id)
+    if hasattr(order, 'dispatch_job') and order.dispatch_job:
+        flash('此訂單已有搶單任務')
+        return redirect(url_for('admin_order_detail', order_id=order_id))
+    from datetime import timezone
+    job = DispatchJob(
+        order_id=order_id,
+        status='開放搶單',
+        note=request.form.get('dispatch_note', ''),
+        notify_customer=request.form.get('notify_customer') == '1',
+    )
+    db.session.add(job)
+    db.session.commit()
+    # 推播給所有有 line_user_id 的啟用司機
+    drivers = Driver.query.filter(Driver.active == True, Driver.line_user_id != '').all()
+    sent = 0
+    for driver in drivers:
+        try:
+            push_dispatch_to_driver(driver, order, job)
+            sent += 1
+        except Exception as e:
+            print(f'Dispatch push error driver {driver.id}: {e}')
+    order.status = '搶單中'
+    db.session.commit()
+    flash(f'搶單任務已發布，共通知 {sent} 位司機')
+    return redirect(url_for('admin_order_detail', order_id=order_id))
+
+@app.route('/admin/dispatch/<int:job_id>/cancel', methods=['POST'])
+@admin_required
+def admin_cancel_dispatch(job_id):
+    job = DispatchJob.query.get_or_404(job_id)
+    job.status = '已取消'
+    if job.order:
+        job.order.status = '待確認'
+    db.session.commit()
+    flash('搶單任務已取消')
+    return redirect(url_for('admin_order_detail', order_id=job.order_id))
+
+@app.route('/admin/dispatch')
+@admin_required
+def admin_dispatch_list():
+    jobs = DispatchJob.query.order_by(DispatchJob.created_at.desc()).all()
+    return render_template('admin/dispatch.html', jobs=jobs)
+
+def push_dispatch_to_driver(driver, order, job):
+    """推播搶單通知給單一司機"""
+    bubble = {
+        "type": "bubble",
+        "header": {
+            "type": "box", "layout": "vertical", "backgroundColor": "#1A2B4A",
+            "contents": [
+                {"type": "text", "text": "新訂單搶單通知", "color": "#FFFFFF", "size": "lg", "weight": "bold"},
+                {"type": "text", "text": f"訂單 #{order.id}　第一個搶到確認！", "color": "#8BA3C7", "size": "sm"}
+            ]
+        },
+        "body": {
+            "type": "box", "layout": "vertical", "spacing": "sm",
+            "contents": [
+                make_info_row("服務", order.service_name),
+                make_info_row("車型需求", order.vehicle),
+                make_info_row("機場", order.airport),
+                make_info_row("接送地點", order.pickup_location),
+                make_info_row("日期時間", f"{order.booking_date} {order.booking_time}"),
+                make_info_row("乘客/行李", f"{order.passengers}人 / {order.luggage}件"),
+                make_info_row("航班", order.flight_number or '無'),
+                {"type": "separator", "margin": "md"},
+                *([make_info_row("備註", job.note)] if job.note else []),
+            ]
+        },
+        "footer": {
+            "type": "box", "layout": "horizontal", "spacing": "sm",
+            "contents": [
+                {
+                    "type": "button",
+                    "action": {"type": "postback", "label": "我要接單", "data": f"grab:{job.id}"},
+                    "style": "primary", "color": "#4A9B8F", "flex": 1
+                },
+                {
+                    "type": "button",
+                    "action": {"type": "postback", "label": "略過", "data": f"skip:{job.id}"},
+                    "style": "secondary", "flex": 1
+                }
+            ]
+        }
+    }
+    with ApiClient(configuration) as api_client:
+        MessagingApi(api_client).push_message(
+            PushMessageRequest(
+                to=driver.line_user_id,
+                messages=[FlexMessage(alt_text=f'新訂單搶單 #{order.id}', contents=FlexContainer.from_dict(bubble))]
+            )
+        )
+
 # ── LINE Handlers ────────────────────────────────────────────────────
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
@@ -459,6 +566,9 @@ def handle_message(event):
     session = user_sessions.get(user_id, {})
     step = session.get('step', '')
 
+    if text in ['我的ID', 'myid', 'MY ID']:
+        reply_text(event.reply_token, f'您的 LINE User ID：\n{user_id}\n\n請將此 ID 提供給管理員，設定後即可接收搶單通知。')
+        return
     if text in ['預約', '訂車', '機場接送', '開始']:
         user_sessions[user_id] = {'step': 'choose_service'}
         send_service_menu(event.reply_token)
@@ -822,6 +932,12 @@ def save_order(reply_token, session, user_id):
         db.session.add(order)
         db.session.commit()
         order_id = order.id
+        # 若開啟自動搶單模式，立即發布給所有司機
+        if AUTO_DISPATCH:
+            try:
+                auto_dispatch_order(order_id)
+            except Exception as e:
+                print(f'Auto dispatch error: {e}')
 
     bubble = {
         "type": "bubble",
@@ -858,6 +974,121 @@ def send_order_query_result(reply_token, orders):
             ]}
         })
     send_flex(reply_token, '訂單查詢結果', {"type": "carousel", "contents": bubbles})
+
+def notify_admin_grab(order, driver):
+    """搶單成功時推播通知後台管理員"""
+    if not ADMIN_LINE_USER_ID:
+        return
+    try:
+        text = (
+            f"搶單成功通知\n"
+            f"訂單 #{order.id}\n"
+            f"司機：{driver.name}（{driver.phone}）\n"
+            f"客戶：{order.name}（{order.phone}）\n"
+            f"日期：{order.booking_date} {order.booking_time}\n"
+            f"機場：{order.airport}\n"
+            f"車牌：{driver.car_plate or '未填'}"
+        )
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).push_message(
+                PushMessageRequest(to=ADMIN_LINE_USER_ID, messages=[TextMessage(text=text)])
+            )
+    except Exception as e:
+        print(f'Admin notify error: {e}')
+
+
+def auto_dispatch_order(order_id):
+    """訂單確認後自動發布搶單（需在後台設定啟用）"""
+    with app.app_context():
+        order = Order.query.get(order_id)
+        if not order:
+            return
+        if hasattr(order, 'dispatch_job') and order.dispatch_job:
+            return  # 已有搶單任務
+        job = DispatchJob(order_id=order_id, status='開放搶單', notify_customer=True)
+        db.session.add(job)
+        db.session.commit()
+        drivers = Driver.query.filter(Driver.active == True, Driver.line_user_id != '').all()
+        order.status = '搶單中'
+        db.session.commit()
+        for d in drivers:
+            try:
+                push_dispatch_to_driver(d, order, job)
+            except Exception as e:
+                print(f'Auto dispatch push error driver {d.id}: {e}')
+
+
+def handle_driver_grab(reply_token, driver_line_id, job_id):
+    """處理司機搶單邏輯"""
+    with app.app_context():
+        job = DispatchJob.query.get(job_id)
+        if not job:
+            reply_text(reply_token, '查無此搶單任務。')
+            return
+        if job.status != '開放搶單':
+            reply_text(reply_token, f'此訂單已{job.status}，搶單結束。')
+            return
+        driver = Driver.query.filter_by(line_user_id=driver_line_id).first()
+        if not driver:
+            reply_text(reply_token, '查無您的司機資料，請聯繫管理員。')
+            return
+        # 已搶過了
+        existing = DispatchResponse.query.filter_by(job_id=job_id, driver_id=driver.id).first()
+        if existing:
+            reply_text(reply_token, '您已回應過此訂單。')
+            return
+        # 搶單成功：更新任務、訂單
+        job.status = '已結單'
+        job.grabbed_by = driver.id
+        job.grabbed_at = datetime.utcnow()
+        order = job.order
+        order.driver_id = driver.id
+        order.status = '已確認'
+        db.session.add(DispatchResponse(job_id=job_id, driver_id=driver.id, action='搶單'))
+        db.session.commit()
+
+        # 通知搶到的司機完整客戶資料
+        bubble = {
+            "type": "bubble",
+            "header": {"type": "box", "layout": "vertical", "backgroundColor": "#4A9B8F",
+                "contents": [
+                    {"type": "text", "text": "搶單成功！", "color": "#FFFFFF", "size": "xl", "weight": "bold"},
+                    {"type": "text", "text": f"訂單 #{order.id}", "color": "#DDDDDD", "size": "sm"}
+                ]},
+            "body": {"type": "box", "layout": "vertical", "spacing": "sm",
+                "contents": [
+                    {"type": "text", "text": "客戶完整資料", "weight": "bold", "color": "#1A2B4A", "margin": "sm"},
+                    {"type": "separator", "margin": "sm"},
+                    make_info_row("姓名", order.name),
+                    make_info_row("電話", order.phone),
+                    make_info_row("信箱", order.email or '無'),
+                    make_info_row("航班", order.flight_number or '無'),
+                    {"type": "separator", "margin": "sm"},
+                    make_info_row("服務", order.service_name),
+                    make_info_row("車型", order.vehicle),
+                    make_info_row("機場", order.airport),
+                    make_info_row("接送地點", order.pickup_location),
+                    make_info_row("日期時間", f"{order.booking_date} {order.booking_time}"),
+                    make_info_row("乘客/行李", f"{order.passengers}人 / {order.luggage}件"),
+                    make_info_row("備註", order.note or '無'),
+                ]}
+        }
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(
+                ReplyMessageRequest(reply_token=reply_token,
+                    messages=[FlexMessage(alt_text='搶單成功！客戶資料如下', contents=FlexContainer.from_dict(bubble))])
+            )
+        # 自動通知客人司機資料
+        if job.notify_customer:
+            try:
+                send_driver_info_to_customer(order, driver)
+                order.driver_notified = True
+                db.session.commit()
+            except Exception as e:
+                print(f'Auto notify customer error: {e}')
+
+        # 通知後台管理員
+        notify_admin_grab(order, driver)
 
 # ── Start ─────────────────────────────────────────────────────────────
 if __name__ == '__main__':
