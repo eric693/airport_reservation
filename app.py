@@ -111,7 +111,6 @@ GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')  # Google Maps A
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')             # OpenAI API Key（用於 AI 客服對話）
 
 user_sessions = {}
-ai_chat_history = {}   # { user_id: [ {role, content}, ... ] }  同對話記憶
 
 def get_vehicles():
     return VehicleType.query.filter_by(active=True).order_by(VehicleType.sort_order).all()
@@ -898,9 +897,8 @@ def handle_message(event):
 
     if text == '取消':
         user_sessions.pop(user_id, None)
-        ai_chat_history.pop(user_id, None)
         reply_text(event.reply_token, '已取消操作。')
-        send_main_menu_after(event.reply_token, user_id)
+        send_main_menu(event.reply_token)
         return
 
     # ── 觸發主選單關鍵字 ──────────────────────────────────────────
@@ -911,7 +909,6 @@ def handle_message(event):
     # ── 預約相關關鍵字（直接跳入預約流程）──────────────────────────
     if text in ['預約', '訂車', '機場接送', '開始預約']:
         user_sessions[user_id] = {'step': 'choose_service'}
-        ai_chat_history.pop(user_id, None)
         send_service_menu(event.reply_token)
         return
 
@@ -925,15 +922,14 @@ def handle_message(event):
         # 在 AI 模式中，若客人說要預約就切換流程
         if any(kw in text for kw in ['預約', '訂車', '我要訂', '我想訂', '幫我訂']):
             user_sessions[user_id] = {'step': 'choose_service'}
-            ai_chat_history.pop(user_id, None)
-            reply_text(event.reply_token, '好的！幫您切換到預約流程')
+            reply_text(event.reply_token, '好的！幫您切換到預約流程 ✈️')
             send_service_menu(event.reply_token)
             return
         if any(kw in text for kw in ['查詢', '我的訂單', '訂單狀態']):
             user_sessions[user_id] = {'step': 'query_name'}
             reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
             return
-        # 一般 AI 對話
+        # 一般 AI 對話（無記憶，每次獨立）
         ai_reply = ask_openai(user_id, text)
         reply_text(event.reply_token, ai_reply)
         return
@@ -1086,6 +1082,7 @@ def handle_message(event):
             reply_text(event.reply_token, ai_reply)
         else:
             send_main_menu(event.reply_token)
+
 
 @handler.add(PostbackEvent)
 def handle_postback(event):
@@ -1268,47 +1265,54 @@ def send_pet_menu(reply_token):
 
 # ── OpenAI AI 客服 ────────────────────────────────────────────────────
 AI_SYSTEM_PROMPT = """你是「機場接送服務」的親切客服助理，名字叫「小飛」。
-你的工作是：
-1. 用繁體中文，以親切、專業的語氣回答客人關於機場接送的問題
-2. 回答範圍包括：車型介紹、費用說明、預約流程、注意事項、行李規定等
-3. 當客人想要預約時，引導他們輸入「預約」開始正式預約流程
-4. 可以閒聊，但以服務為主
 
-費用資訊（參考）：
-- 基本車資依區域不同，例如台中到桃園機場約 NT$2,200
-- 夜間服務費（22:00-06:00）加收 NT$200
-- 舉牌服務加收 NT$300
-- 兒童安全座椅每張加收 NT$200（最多2張）
-- 寵物同行加收 NT$1,100
-- 七天內預約加收 NT$300，三天內臨時單加收 NT$300
-- 假日/旺季期間加收 NT$300
-- 多點停靠依距離加收 NT$200–500
+【個性】
+親切、有溫度，像朋友一樣，但仍保持專業。可以輕鬆閒聊，但永遠把服務放在心上。
 
-車型選擇：
+【你能做的事】
+1. 回答機場接送相關問題（費用、流程、車型、注意事項）
+2. 查詢客人的訂單（需要姓名或電話，請引導他們輸入「查詢訂單」由系統處理）
+3. 引導客人預約（請他輸入「預約」進入正式預約流程）
+4. 一般閒聊，讓客人感到輕鬆
+
+【費用資訊】
+- 基本車資依出發地區域與機場而定（例：台中→桃園機場約 NT$2,200）
+- 夜間費（22:00–06:00）：+NT$200
+- 舉牌服務：+NT$300
+- 兒童安全座椅：+NT$200 / 張（最多2張）
+- 寵物同行：+NT$1,100（自動升等九座廂型車）
+- 七天內預約：+NT$300
+- 三天內臨時單：+NT$300
+- 假日/旺季期間：+NT$300
+- 多點停靠：依距離 +NT$200–500
+
+【車型】
 - 標準四座轎車：最多4人
 - 商務六座廂型車：最多6人
 - 豪華七座SUV：最多7人
-- 九座廂型車：最多9人（寵物同行自動升級）
+- 九座廂型車：最多9人
 
-重要提醒：
-- 回答要簡潔，避免過長
-- 如果客人詢問具體訂單狀態，請他輸入「查詢訂單」
-- 如果客人想要預約，請他輸入「預約」
-- 不確定的事情不要亂答，請客人聯繫客服確認
+【回覆原則】
+- 全程使用繁體中文
+- 回覆要簡潔口語，不要太正式或太長
+- 若客人問具體訂單狀態，請他輸入「查詢訂單」由系統查詢
+- 若客人要預約，請他輸入「預約」進入預約流程
+- 不確定的資訊不要亂猜，誠實說不確定並建議聯繫客服
 """
 
-def ask_openai(user_id, user_message):
-    """呼叫 OpenAI API，帶入對話記憶，回傳 AI 回應文字"""
+def ask_openai(user_id, user_message, order_context=None):
+    """呼叫 OpenAI API（無記憶模式），回傳 AI 回應文字"""
     if not OPENAI_API_KEY:
         return '目前 AI 客服功能未啟用，請輸入「預約」開始預約，或輸入「查詢訂單」查詢訂單。'
 
-    # 取得或初始化對話記憶（最多保留 10 輪）
-    history = ai_chat_history.get(user_id, [])
-    history.append({'role': 'user', 'content': user_message})
-    if len(history) > 20:
-        history = history[-20:]  # 保留最近 20 則
+    system = AI_SYSTEM_PROMPT
+    if order_context:
+        system += f"\n\n【客人訂單資料（僅供參考）】\n{order_context}"
 
-    messages = [{'role': 'system', 'content': AI_SYSTEM_PROMPT}] + history
+    messages = [
+        {'role': 'system', 'content': system},
+        {'role': 'user', 'content': user_message},
+    ]
 
     try:
         resp = requests.post(
@@ -1320,16 +1324,13 @@ def ask_openai(user_id, user_message):
             json={
                 'model': 'gpt-4o-mini',
                 'messages': messages,
-                'max_tokens': 500,
-                'temperature': 0.7,
+                'max_tokens': 400,
+                'temperature': 0.75,
             },
             timeout=15
         )
         data = resp.json()
-        ai_reply = data['choices'][0]['message']['content'].strip()
-        history.append({'role': 'assistant', 'content': ai_reply})
-        ai_chat_history[user_id] = history
-        return ai_reply
+        return data['choices'][0]['message']['content'].strip()
     except Exception as e:
         print(f'OpenAI error: {e}')
         return '抱歉，AI 客服暫時無法回應，請稍後再試，或輸入「預約」開始預約流程。'
