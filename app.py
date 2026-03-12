@@ -6,7 +6,7 @@ import time
 import requests
 from datetime import datetime, timedelta
 from sqlalchemy.pool import NullPool
-from flask import Flask, request, abort, render_template, redirect, url_for, flash, jsonify
+from flask import Flask, request, abort, render_template, redirect, url_for, flash, jsonify, session as flask_session
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
@@ -213,11 +213,31 @@ def send_driver_info_to_customer(order, driver):
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        auth = request.authorization
-        if not auth or auth.username != ADMIN_USERNAME or auth.password != ADMIN_PASSWORD:
-            return ('請輸入帳號密碼', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
+        if not flask_session.get('admin_logged_in'):
+            return redirect(url_for('admin_login', next=request.url))
         return f(*args, **kwargs)
     return decorated
+
+
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    error = None
+    if request.method == 'POST':
+        username = request.form.get('username', '')
+        password = request.form.get('password', '')
+        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+            flask_session['admin_logged_in'] = True
+            flask_session.permanent = True
+            next_url = request.args.get('next') or url_for('admin_index')
+            return redirect(next_url)
+        error = '帳號或密碼錯誤，請重新輸入'
+    return render_template('admin/login.html', error=error)
+
+
+@app.route('/admin/logout')
+def admin_logout():
+    flask_session.pop('admin_logged_in', None)
+    return redirect(url_for('admin_login'))
 
 def reply_text(reply_token, text):
     with ApiClient(configuration) as api_client:
