@@ -39,6 +39,22 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 db.init_app(app)
 with app.app_context():
     db.create_all()
+    # 自動補上新增的欄位（ALTER TABLE，已存在時略過）
+    _migrations = [
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS extra_stops TEXT DEFAULT ''",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS extra_stop_fee INTEGER DEFAULT 0",
+        "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS line_user_id VARCHAR(100) DEFAULT ''",
+        "ALTER TABLE dispatch_jobs ADD COLUMN IF NOT EXISTS deadline TIMESTAMP",
+        "ALTER TABLE dispatch_jobs ADD COLUMN IF NOT EXISTS note VARCHAR(200) DEFAULT ''",
+        "ALTER TABLE dispatch_jobs ADD COLUMN IF NOT EXISTS notify_customer BOOLEAN DEFAULT TRUE",
+    ]
+    with db.engine.connect() as _conn:
+        for _sql in _migrations:
+            try:
+                _conn.execute(db.text(_sql))
+            except Exception as _e:
+                print(f'Migration skip: {_e}')
+        _conn.commit()
     if VehicleType.query.count() == 0:
         defaults = [
             VehicleType(name='標準國產四座轎車', capacity=4, luggage_capacity=2, sort_order=1),
