@@ -275,9 +275,9 @@ def send_flex(reply_token, alt_text, contents):
         )
 
 def make_info_row(label, value):
-    return {"type": "box", "layout": "horizontal", "margin": "sm", "contents": [
-        {"type": "text", "text": label, "size": "sm", "color": "#888888", "flex": 3},
-        {"type": "text", "text": str(value), "size": "sm", "color": "#333333", "flex": 5, "wrap": True}
+    return {"type": "box", "layout": "vertical", "margin": "sm", "contents": [
+        {"type": "text", "text": label, "size": "xs", "color": "#888888", "wrap": True},
+        {"type": "text", "text": str(value), "size": "sm", "color": "#333333", "wrap": True, "margin": "xs"}
     ]}
 
 def parse_date(text):
