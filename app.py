@@ -1,39 +1,40 @@
 import os
-import json
 import threading
 import time
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, request, abort, render_template, redirect, url_for, flash, jsonify
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
     Configuration, ApiClient, MessagingApi,
-    ReplyMessageRequest, TextMessage, FlexMessage,
-    FlexContainer, PushMessageRequest
+    ReplyMessageRequest, TextMessage, FlexMessage, FlexContainer,
+    PushMessageRequest
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, PostbackEvent
-from linebot.v3.messaging.models import (
-    FlexBubble, FlexBox, FlexText, FlexButton, FlexSeparator,
-    URIAction, PostbackAction, MessageAction,
-    QuickReply, QuickReplyItem
-)
-from database import db, Order, init_db
+from apscheduler.schedulers.background import BackgroundScheduler
+from database import db, Order, Driver
 from functools import wraps
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-this')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///airport.db')
-if app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgres://'):
-    app.config['SQLALCHEMY_DATABASE_URI'] = app.config['SQLALCHEMY_DATABASE_URI'].replace('postgres://', 'postgresql://', 1)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'change-this-secret')
+
+database_url = os.environ.get('DATABASE_URL', 'sqlite:///airport.db')
+if database_url.startswith('postgres://'):
+    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
+with app.app_context():
+    db.create_all()
 
 configuration = Configuration(access_token=os.environ.get('LINE_CHANNEL_ACCESS_TOKEN'))
 handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
 
-# User session storage (in-memory for flow tracking)
+ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin1234')
+
 user_sessions = {}
 
 VEHICLE_TYPES = {
@@ -47,11 +48,103 @@ AIRPORTS = {
     'tpe1': '桃園機場第一航廈',
     'tpe2': '桃園機場第二航廈',
     'tsa': '松山機場',
+    'rmq': '台中清泉崗機場',
+    'khh': '高雄小港機場',
 }
 
-ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin1234')
+CHILD_SEATS = {
+    'baby': '嬰兒幼童座椅型 (0-1歲)',
+    'child': '兒童座椅型 (1-4歲)',
+    'booster': '增高座墊 (4-12歲)',
+    'none': '不需要',
+}
 
+# ── Keep-alive ──────────────────────────────────────────────────────
+def keep_alive():
+    url = os.environ.get('RENDER_EXTERNAL_URL', '')
+    if url:
+        while True:
+            try:
+                requests.get(f"{url}/ping", timeout=10)
+            except Exception:
+                pass
+            time.sleep(840)
+
+# ── Auto-notify scheduler ───────────────────────────────────────────
+def check_and_notify():
+    """每分鐘檢查是否有訂單需要發送司機資料給客人"""
+    with app.app_context():
+        now = datetime.utcnow() + timedelta(hours=8)  # 轉為台灣時間
+        orders = Order.query.filter(
+            Order.status == '已確認',
+            Order.driver_id != None,
+            Order.driver_notified == False,
+            Order.notify_at != '',
+            Order.notify_at != None,
+        ).all()
+
+        for order in orders:
+            try:
+                booking_dt = datetime.strptime(
+                    f"{order.booking_date} {order.booking_time}", '%Y-%m-%d %H:%M'
+                )
+                hours_before = int(order.notify_at)
+                notify_time = booking_dt - timedelta(hours=hours_before)
+
+                if now >= notify_time:
+                    driver = order.driver
+                    if driver:
+                        send_driver_info_to_customer(order, driver)
+                        order.driver_notified = True
+                        db.session.commit()
+            except Exception as e:
+                print(f"Notify error for order {order.id}: {e}")
+
+def send_driver_info_to_customer(order, driver):
+    """推播司機資料給客人的 LINE"""
+    bubble = {
+        "type": "bubble",
+        "header": {
+            "type": "box", "layout": "vertical", "backgroundColor": "#4A9B8F",
+            "contents": [
+                {"type": "text", "text": "您的司機資料", "color": "#FFFFFF", "size": "xl", "weight": "bold"},
+                {"type": "text", "text": f"訂單 #{order.id}", "color": "#DDDDDD", "size": "sm"}
+            ]
+        },
+        "body": {
+            "type": "box", "layout": "vertical",
+            "contents": [
+                make_info_row("出發時間", f"{order.booking_date} {order.booking_time}"),
+                make_info_row("服務", order.service_name),
+                make_info_row("地點", order.pickup_location),
+                {"type": "separator", "margin": "md"},
+                {"type": "text", "text": "司機資訊", "weight": "bold", "margin": "md", "color": "#1A2B4A"},
+                make_info_row("司機姓名", driver.name),
+                make_info_row("聯絡電話", driver.phone),
+                make_info_row("車輛", f"{driver.car_brand}"),
+                make_info_row("車牌", driver.car_plate),
+                make_info_row("車身顏色", driver.car_color),
+                {"type": "separator", "margin": "md"},
+                {
+                    "type": "text",
+                    "text": "如有任何問題請直接致電司機，祝您旅途愉快！",
+                    "size": "xs", "color": "#888888", "margin": "md", "wrap": True
+                }
+            ]
+        }
+    }
+    try:
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).push_message(
+                PushMessageRequest(
+                    to=order.line_user_id,
+                    messages=[FlexMessage(alt_text='您的司機資料已送出', contents=FlexContainer.from_dict(bubble))]
+                )
+            )
+    except Exception as e:
+        print(f"Push message error: {e}")
+
+# ── Helpers ─────────────────────────────────────────────────────────
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -61,18 +154,43 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated
 
-# ─── Keep-alive ping ───────────────────────────────────────────────
-def keep_alive():
-    url = os.environ.get('RENDER_EXTERNAL_URL', '')
-    if url:
-        while True:
-            try:
-                requests.get(f"{url}/ping", timeout=10)
-            except Exception:
-                pass
-            time.sleep(840)  # ping every 14 minutes
+def reply_text(reply_token, text):
+    with ApiClient(configuration) as api_client:
+        MessagingApi(api_client).reply_message(
+            ReplyMessageRequest(reply_token=reply_token, messages=[TextMessage(text=text)])
+        )
 
-# ─── LINE Bot webhook ───────────────────────────────────────────────
+def send_flex(reply_token, alt_text, contents):
+    with ApiClient(configuration) as api_client:
+        MessagingApi(api_client).reply_message(
+            ReplyMessageRequest(
+                reply_token=reply_token,
+                messages=[FlexMessage(alt_text=alt_text, contents=FlexContainer.from_dict(contents))]
+            )
+        )
+
+def make_info_row(label, value):
+    return {"type": "box", "layout": "horizontal", "margin": "sm", "contents": [
+        {"type": "text", "text": label, "size": "sm", "color": "#888888", "flex": 3},
+        {"type": "text", "text": str(value), "size": "sm", "color": "#333333", "flex": 5, "wrap": True}
+    ]}
+
+def is_night_time(time_str):
+    try:
+        h = int(time_str.split(':')[0])
+        return h >= 22 or h <= 6
+    except Exception:
+        return False
+
+def make_button(label, data, style='secondary'):
+    return {"type": "button", "action": {"type": "postback", "label": label, "data": data},
+            "style": style, "margin": "sm"}
+
+def header_box(title, color="#4A9B8F"):
+    return {"type": "box", "layout": "vertical", "backgroundColor": color,
+            "contents": [{"type": "text", "text": title, "color": "#FFFFFF", "size": "xl", "weight": "bold"}]}
+
+# ── Routes ───────────────────────────────────────────────────────────
 @app.route('/callback', methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
@@ -87,7 +205,7 @@ def callback():
 def ping():
     return 'pong'
 
-# ─── Admin routes ───────────────────────────────────────────────────
+# ── Admin: Orders ────────────────────────────────────────────────────
 @app.route('/admin')
 @admin_required
 def admin_index():
@@ -98,16 +216,44 @@ def admin_index():
 @admin_required
 def admin_order_detail(order_id):
     order = Order.query.get_or_404(order_id)
-    return render_template('admin/order_detail.html', order=order)
+    drivers = Driver.query.filter_by(active=True).all()
+    return render_template('admin/order_detail.html', order=order, drivers=drivers)
 
 @app.route('/admin/order/<int:order_id>/status', methods=['POST'])
 @admin_required
 def admin_update_status(order_id):
     order = Order.query.get_or_404(order_id)
-    new_status = request.form.get('status')
-    order.status = new_status
+    order.status = request.form.get('status')
     db.session.commit()
     flash('訂單狀態已更新')
+    return redirect(url_for('admin_order_detail', order_id=order_id))
+
+@app.route('/admin/order/<int:order_id>/assign', methods=['POST'])
+@admin_required
+def admin_assign_driver(order_id):
+    order = Order.query.get_or_404(order_id)
+    driver_id = request.form.get('driver_id')
+    notify_at = request.form.get('notify_at', '2')
+
+    order.driver_id = int(driver_id) if driver_id else None
+    order.notify_at = notify_at
+    order.driver_notified = False  # 重置，允許重新發送
+    db.session.commit()
+    flash(f'已指派司機，將於出發前 {notify_at} 小時自動發送司機資料給客人')
+    return redirect(url_for('admin_order_detail', order_id=order_id))
+
+@app.route('/admin/order/<int:order_id>/notify_now', methods=['POST'])
+@admin_required
+def admin_notify_now(order_id):
+    """立即發送司機資料"""
+    order = Order.query.get_or_404(order_id)
+    if order.driver:
+        send_driver_info_to_customer(order, order.driver)
+        order.driver_notified = True
+        db.session.commit()
+        flash('已立即發送司機資料給客人')
+    else:
+        flash('請先指派司機')
     return redirect(url_for('admin_order_detail', order_id=order_id))
 
 @app.route('/admin/order/<int:order_id>/delete', methods=['POST'])
@@ -119,116 +265,179 @@ def admin_delete_order(order_id):
     flash('訂單已刪除')
     return redirect(url_for('admin_index'))
 
-@app.route('/admin/api/stats')
+# ── Admin: Drivers ───────────────────────────────────────────────────
+@app.route('/admin/drivers')
 @admin_required
-def admin_stats():
-    total = Order.query.count()
-    pending = Order.query.filter_by(status='待確認').count()
-    confirmed = Order.query.filter_by(status='已確認').count()
-    completed = Order.query.filter_by(status='已完成').count()
-    cancelled = Order.query.filter_by(status='已取消').count()
-    return jsonify({
-        'total': total, 'pending': pending,
-        'confirmed': confirmed, 'completed': completed, 'cancelled': cancelled
-    })
+def admin_drivers():
+    drivers = Driver.query.order_by(Driver.created_at.desc()).all()
+    return render_template('admin/drivers.html', drivers=drivers)
 
-# ─── LINE message handlers ──────────────────────────────────────────
+@app.route('/admin/drivers/add', methods=['POST'])
+@admin_required
+def admin_add_driver():
+    driver = Driver(
+        name=request.form.get('name'),
+        phone=request.form.get('phone'),
+        car_brand=request.form.get('car_brand', ''),
+        car_plate=request.form.get('car_plate', ''),
+        car_color=request.form.get('car_color', ''),
+        note=request.form.get('note', ''),
+    )
+    db.session.add(driver)
+    db.session.commit()
+    flash('司機已新增')
+    return redirect(url_for('admin_drivers'))
+
+@app.route('/admin/drivers/<int:driver_id>/edit', methods=['POST'])
+@admin_required
+def admin_edit_driver(driver_id):
+    driver = Driver.query.get_or_404(driver_id)
+    driver.name = request.form.get('name')
+    driver.phone = request.form.get('phone')
+    driver.car_brand = request.form.get('car_brand', '')
+    driver.car_plate = request.form.get('car_plate', '')
+    driver.car_color = request.form.get('car_color', '')
+    driver.note = request.form.get('note', '')
+    driver.active = request.form.get('active') == '1'
+    db.session.commit()
+    flash('司機資料已更新')
+    return redirect(url_for('admin_drivers'))
+
+@app.route('/admin/drivers/<int:driver_id>/delete', methods=['POST'])
+@admin_required
+def admin_delete_driver(driver_id):
+    driver = Driver.query.get_or_404(driver_id)
+    db.session.delete(driver)
+    db.session.commit()
+    flash('司機已刪除')
+    return redirect(url_for('admin_drivers'))
+
+# ── LINE Handlers ────────────────────────────────────────────────────
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_id = event.source.user_id
     text = event.message.text.strip()
+    session = user_sessions.get(user_id, {})
+    step = session.get('step', '')
 
     if text in ['預約', '訂車', '機場接送', '開始']:
         user_sessions[user_id] = {'step': 'choose_service'}
         send_service_menu(event.reply_token)
-    elif text == '查詢訂單':
+        return
+    if text == '查詢訂單':
         user_sessions[user_id] = {'step': 'query_name'}
         reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
-    elif text == '取消':
+        return
+    if text == '取消':
         user_sessions.pop(user_id, None)
-        reply_text(event.reply_token, '已取消操作。\n\n輸入「預約」開始新的預約，或輸入「查詢訂單」查詢訂單。')
-    else:
-        session = user_sessions.get(user_id, {})
-        step = session.get('step')
+        reply_text(event.reply_token, '已取消操作。\n\n輸入「預約」開始新的預約。')
+        return
 
-        if step == 'query_name':
-            session['query_name'] = text
-            session['step'] = 'query_phone'
-            user_sessions[user_id] = session
-            reply_text(event.reply_token, '請輸入您預約時留的手機號碼（例：0912345678）：')
-        elif step == 'query_phone':
-            name = session.get('query_name')
-            phone = text
-            orders = Order.query.filter_by(name=name, phone=phone).order_by(Order.created_at.desc()).limit(5).all()
-            user_sessions.pop(user_id, None)
-            if orders:
-                send_order_query_result(event.reply_token, orders)
-            else:
-                reply_text(event.reply_token, f'查無符合資料。\n姓名：{name}\n電話：{phone}\n\n請確認資料是否正確，或輸入「預約」重新預約。')
-        elif step == 'input_pickup':
-            session['pickup'] = text
-            session['step'] = 'input_date'
-            user_sessions[user_id] = session
-            reply_text(event.reply_token, '請輸入接送日期（格式：2025-06-15）：')
-        elif step == 'input_date':
-            try:
-                datetime.strptime(text, '%Y-%m-%d')
-                session['date'] = text
-                session['step'] = 'input_time'
-                user_sessions[user_id] = session
-                reply_text(event.reply_token, '請輸入接送時間（格式：08:30）：')
-            except ValueError:
-                reply_text(event.reply_token, '日期格式錯誤，請輸入正確格式，例如：2025-06-15')
-        elif step == 'input_time':
-            try:
-                datetime.strptime(text, '%H:%M')
-                session['time'] = text
-                session['step'] = 'input_passengers'
-                user_sessions[user_id] = session
-                reply_text(event.reply_token, '請輸入乘客人數（數字）：')
-            except ValueError:
-                reply_text(event.reply_token, '時間格式錯誤，請輸入正確格式，例如：08:30')
-        elif step == 'input_passengers':
-            if text.isdigit() and 1 <= int(text) <= 20:
-                session['passengers'] = text
-                session['step'] = 'input_luggage'
-                user_sessions[user_id] = session
-                reply_text(event.reply_token, '請輸入行李件數（數字）：')
-            else:
-                reply_text(event.reply_token, '請輸入有效的乘客人數（1-20）：')
-        elif step == 'input_luggage':
-            if text.isdigit():
-                session['luggage'] = text
-                session['step'] = 'input_name'
-                user_sessions[user_id] = session
-                reply_text(event.reply_token, '請輸入您的姓名（中文）：')
-            else:
-                reply_text(event.reply_token, '請輸入有效的行李件數（數字）：')
-        elif step == 'input_name':
-            session['name'] = text
-            session['step'] = 'input_phone'
-            user_sessions[user_id] = session
-            reply_text(event.reply_token, '請輸入您的手機號碼（例：0912345678）：')
-        elif step == 'input_phone':
-            if len(text) == 10 and text.startswith('09'):
-                session['phone'] = text
-                session['step'] = 'input_flight'
-                user_sessions[user_id] = session
-                reply_text(event.reply_token, '請輸入航班號碼（若無可輸入「無」）：')
-            else:
-                reply_text(event.reply_token, '請輸入有效的手機號碼（例：0912345678）：')
-        elif step == 'input_flight':
-            session['flight'] = text
-            session['step'] = 'input_note'
-            user_sessions[user_id] = session
-            reply_text(event.reply_token, '是否有備註事項？（無備註請輸入「無」）：')
-        elif step == 'input_note':
-            session['note'] = text if text != '無' else ''
-            session['step'] = 'confirm'
-            user_sessions[user_id] = session
-            send_order_confirm(event.reply_token, session)
+    if step == 'query_name':
+        session['query_name'] = text
+        session['step'] = 'query_phone'
+        user_sessions[user_id] = session
+        reply_text(event.reply_token, '請輸入您預約時留的手機號碼（例：0912345678）：')
+
+    elif step == 'query_phone':
+        orders = Order.query.filter_by(name=session.get('query_name'), phone=text)\
+                            .order_by(Order.created_at.desc()).limit(5).all()
+        user_sessions.pop(user_id, None)
+        if orders:
+            send_order_query_result(event.reply_token, orders)
         else:
-            send_main_menu(event.reply_token)
+            reply_text(event.reply_token, f'查無符合資料。\n姓名：{session.get("query_name")}\n電話：{text}\n\n請確認資料是否正確。')
+
+    elif step == 'input_pickup':
+        session['pickup'] = text
+        session['step'] = 'input_date'
+        user_sessions[user_id] = session
+        reply_text(event.reply_token, '請輸入接送日期（格式：2025-06-15）：')
+
+    elif step == 'input_date':
+        try:
+            datetime.strptime(text, '%Y-%m-%d')
+            session['date'] = text
+            session['step'] = 'input_time'
+            user_sessions[user_id] = session
+            reply_text(event.reply_token, '請輸入接送時間（格式：08:30）：\n\n注意：22:00～06:00 為夜間時段，需加收 NT$200 夜間服務費。')
+        except ValueError:
+            reply_text(event.reply_token, '日期格式錯誤，請重新輸入，例如：2025-06-15')
+
+    elif step == 'input_time':
+        try:
+            datetime.strptime(text, '%H:%M')
+            session['time'] = text
+            session['night_fee'] = is_night_time(text)
+            session['step'] = 'input_passengers'
+            user_sessions[user_id] = session
+            night_msg = '\n（夜間時段，將加收 NT$200）' if session['night_fee'] else ''
+            reply_text(event.reply_token, f'已記錄時間：{text}{night_msg}\n\n請輸入乘客人數（數字）：')
+        except ValueError:
+            reply_text(event.reply_token, '時間格式錯誤，請重新輸入，例如：08:30')
+
+    elif step == 'input_passengers':
+        if text.isdigit() and 1 <= int(text) <= 20:
+            session['passengers'] = text
+            session['step'] = 'input_luggage'
+            user_sessions[user_id] = session
+            reply_text(event.reply_token, '請輸入行李件數（數字）：')
+        else:
+            reply_text(event.reply_token, '請輸入有效的乘客人數（1-20）：')
+
+    elif step == 'input_luggage':
+        if text.isdigit():
+            session['luggage'] = text
+            session['step'] = 'input_name'
+            user_sessions[user_id] = session
+            reply_text(event.reply_token, '請輸入您的中文姓名：')
+        else:
+            reply_text(event.reply_token, '請輸入有效的行李件數（數字）：')
+
+    elif step == 'input_name':
+        session['name'] = text
+        session['step'] = 'input_phone'
+        user_sessions[user_id] = session
+        reply_text(event.reply_token, '請輸入您的手機號碼（例：0912345678）：')
+
+    elif step == 'input_phone':
+        if len(text) == 10 and text.startswith('09'):
+            session['phone'] = text
+            session['step'] = 'input_email'
+            user_sessions[user_id] = session
+            reply_text(event.reply_token, '請輸入您的電子信箱（若無請輸入「無」）：')
+        else:
+            reply_text(event.reply_token, '請輸入有效的手機號碼（例：0912345678）：')
+
+    elif step == 'input_email':
+        session['email'] = '' if text == '無' else text
+        session['step'] = 'input_flight'
+        user_sessions[user_id] = session
+        reply_text(event.reply_token, '請輸入航班號碼（若無請輸入「無」）：')
+
+    elif step == 'input_flight':
+        session['flight'] = '' if text == '無' else text
+        session['step'] = 'ask_child_seat'
+        user_sessions[user_id] = session
+        send_child_seat_menu(event.reply_token)
+
+    elif step == 'input_child_seat_count':
+        if text.isdigit() and 1 <= int(text) <= 2:
+            session['child_seat_count'] = int(text)
+            session['step'] = 'ask_sign_board'
+            user_sessions[user_id] = session
+            send_sign_board_menu(event.reply_token)
+        else:
+            reply_text(event.reply_token, '每車最多 2 張，請輸入 1 或 2：')
+
+    elif step == 'input_note':
+        session['note'] = '' if text == '無' else text
+        session['step'] = 'confirm'
+        user_sessions[user_id] = session
+        send_order_confirm(event.reply_token, session)
+
+    else:
+        send_main_menu(event.reply_token)
 
 @handler.add(PostbackEvent)
 def handle_postback(event):
@@ -237,47 +446,81 @@ def handle_postback(event):
     session = user_sessions.get(user_id, {})
 
     if data == 'service_departure':
-        session = {'step': 'choose_vehicle', 'service': 'departure', 'service_name': '送機(出境)'}
+        session = {'step': 'choose_vehicle', 'service': 'departure', 'service_name': '送機（出境）'}
         user_sessions[user_id] = session
         send_vehicle_menu(event.reply_token)
+
     elif data == 'service_arrival':
-        session = {'step': 'choose_vehicle', 'service': 'arrival', 'service_name': '接機(回國)'}
+        session = {'step': 'choose_vehicle', 'service': 'arrival', 'service_name': '接機（回國）'}
         user_sessions[user_id] = session
         send_vehicle_menu(event.reply_token)
+
     elif data.startswith('vehicle_'):
         v_key = data.replace('vehicle_', '')
         session['vehicle'] = VEHICLE_TYPES.get(v_key, '標準國產四座轎車')
         session['step'] = 'choose_airport'
         user_sessions[user_id] = session
         send_airport_menu(event.reply_token)
+
     elif data.startswith('airport_'):
         a_key = data.replace('airport_', '')
         session['airport'] = AIRPORTS.get(a_key, '桃園機場第一航廈')
         session['step'] = 'input_pickup'
         user_sessions[user_id] = session
-        service = session.get('service')
-        if service == 'departure':
+        if session.get('service') == 'departure':
             reply_text(event.reply_token, '請輸入接送地點（起點）：\n例：台北市信義區忠孝東路五段1號')
         else:
             reply_text(event.reply_token, '請輸入目的地（終點）：\n例：台北市信義區忠孝東路五段1號')
+
+    elif data.startswith('child_seat_'):
+        seat_key = data.replace('child_seat_', '')
+        if seat_key == 'none':
+            session['child_seat'] = ''
+            session['child_seat_count'] = 0
+            session['step'] = 'ask_sign_board'
+            user_sessions[user_id] = session
+            send_sign_board_menu(event.reply_token)
+        else:
+            session['child_seat'] = CHILD_SEATS.get(seat_key, '')
+            session['step'] = 'input_child_seat_count'
+            user_sessions[user_id] = session
+            reply_text(event.reply_token, f'已選擇：{session["child_seat"]}\n\n請輸入需要幾張安全座椅（最多 2 張）：')
+
+    elif data == 'sign_board_yes':
+        session['sign_board'] = True
+        session['step'] = 'ask_pet'
+        user_sessions[user_id] = session
+        send_pet_menu(event.reply_token)
+
+    elif data == 'sign_board_no':
+        session['sign_board'] = False
+        session['step'] = 'ask_pet'
+        user_sessions[user_id] = session
+        send_pet_menu(event.reply_token)
+
+    elif data == 'pet_yes':
+        if '九座' not in session.get('vehicle', ''):
+            session['vehicle'] = '九座廂型車'
+        session['pet'] = True
+        session['step'] = 'input_note'
+        user_sessions[user_id] = session
+        reply_text(event.reply_token, '寵物同行加收：車型加價 NT$300 + 清潔費 NT$800 = NT$1,100\n（已自動調整為九座廂型車）\n\n請輸入備註事項（若無請輸入「無」）：')
+
+    elif data == 'pet_no':
+        session['pet'] = False
+        session['step'] = 'input_note'
+        user_sessions[user_id] = session
+        reply_text(event.reply_token, '請輸入備註事項（若無請輸入「無」）：')
+
     elif data == 'confirm_order':
         save_order(event.reply_token, session, user_id)
         user_sessions.pop(user_id, None)
+
     elif data == 'cancel_order':
         user_sessions.pop(user_id, None)
-        reply_text(event.reply_token, '已取消預約。\n\n輸入「預約」重新開始，或輸入「查詢訂單」查詢訂單。')
+        reply_text(event.reply_token, '已取消預約。\n\n輸入「預約」重新開始。')
 
-# ─── Helper functions ───────────────────────────────────────────────
-def reply_text(reply_token, text):
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=reply_token,
-                messages=[TextMessage(text=text)]
-            )
-        )
-
+# ── Menu senders ─────────────────────────────────────────────────────
 def send_main_menu(reply_token):
     reply_text(reply_token,
         '歡迎使用機場接送服務！\n\n'
@@ -290,197 +533,116 @@ def send_main_menu(reply_token):
 def send_service_menu(reply_token):
     bubble = {
         "type": "bubble",
-        "header": {
-            "type": "box",
-            "layout": "vertical",
-            "backgroundColor": "#4A9B8F",
-            "contents": [
-                {"type": "text", "text": "機場接送預約", "color": "#FFFFFF", "size": "xl", "weight": "bold"}
-            ]
-        },
-        "body": {
-            "type": "box",
-            "layout": "vertical",
-            "contents": [
-                {"type": "text", "text": "請選擇服務類型", "size": "md", "color": "#333333", "margin": "md"},
-                {"type": "separator", "margin": "md"},
-                {
-                    "type": "button",
-                    "action": {"type": "postback", "label": "預約送機（出境）", "data": "service_departure"},
-                    "style": "primary",
-                    "color": "#4A9B8F",
-                    "margin": "md"
-                },
-                {
-                    "type": "button",
-                    "action": {"type": "postback", "label": "預約接機（回國）", "data": "service_arrival"},
-                    "style": "secondary",
-                    "margin": "md"
-                }
-            ]
-        }
+        "header": header_box("機場接送預約"),
+        "body": {"type": "box", "layout": "vertical", "contents": [
+            {"type": "text", "text": "請選擇服務類型", "size": "md", "color": "#333333", "margin": "md"},
+            {"type": "separator", "margin": "md"},
+            make_button("預約送機（出境）", "service_departure", "primary"),
+            make_button("預約接機（回國）", "service_arrival"),
+        ]}
     }
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=reply_token,
-                messages=[FlexMessage(alt_text='選擇服務類型', contents=FlexContainer.from_dict(bubble))]
-            )
-        )
+    send_flex(reply_token, '選擇服務類型', bubble)
 
 def send_vehicle_menu(reply_token):
-    buttons = []
-    for key, name in VEHICLE_TYPES.items():
-        buttons.append({
-            "type": "button",
-            "action": {"type": "postback", "label": name, "data": f"vehicle_{key}"},
-            "style": "secondary",
-            "margin": "sm"
-        })
+    buttons = [make_button(name, f"vehicle_{key}") for key, name in VEHICLE_TYPES.items()]
     bubble = {
         "type": "bubble",
-        "header": {
-            "type": "box",
-            "layout": "vertical",
-            "backgroundColor": "#4A9B8F",
-            "contents": [
-                {"type": "text", "text": "選擇車型", "color": "#FFFFFF", "size": "xl", "weight": "bold"}
-            ]
-        },
-        "body": {
-            "type": "box",
-            "layout": "vertical",
-            "contents": [{"type": "text", "text": "請選擇您需要的車型", "size": "md", "color": "#333333"}] + buttons
-        }
+        "header": header_box("選擇車型"),
+        "body": {"type": "box", "layout": "vertical", "contents": [
+            {"type": "text", "text": "請選擇車型", "size": "md", "color": "#333333"},
+            {"type": "text", "text": "• 四座：4人 / 大件2件\n• 六座：6人 / 大件4件\n• SUV七座：7人 / 大件4件\n• 九座：9人 / 大件6件",
+             "size": "xs", "color": "#888888", "margin": "sm", "wrap": True},
+        ] + buttons}
     }
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=reply_token,
-                messages=[FlexMessage(alt_text='選擇車型', contents=FlexContainer.from_dict(bubble))]
-            )
-        )
+    send_flex(reply_token, '選擇車型', bubble)
 
 def send_airport_menu(reply_token):
-    buttons = []
-    for key, name in AIRPORTS.items():
-        buttons.append({
-            "type": "button",
-            "action": {"type": "postback", "label": name, "data": f"airport_{key}"},
-            "style": "secondary",
-            "margin": "sm"
-        })
+    buttons = [make_button(name, f"airport_{key}") for key, name in AIRPORTS.items()]
     bubble = {
         "type": "bubble",
-        "header": {
-            "type": "box",
-            "layout": "vertical",
-            "backgroundColor": "#4A9B8F",
-            "contents": [
-                {"type": "text", "text": "選擇機場", "color": "#FFFFFF", "size": "xl", "weight": "bold"}
-            ]
-        },
-        "body": {
-            "type": "box",
-            "layout": "vertical",
-            "contents": [{"type": "text", "text": "請選擇目的機場", "size": "md", "color": "#333333"}] + buttons
-        }
+        "header": header_box("選擇機場"),
+        "body": {"type": "box", "layout": "vertical", "contents": [
+            {"type": "text", "text": "請選擇機場", "size": "md", "color": "#333333"}
+        ] + buttons}
     }
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=reply_token,
-                messages=[FlexMessage(alt_text='選擇機場', contents=FlexContainer.from_dict(bubble))]
-            )
-        )
+    send_flex(reply_token, '選擇機場', bubble)
+
+def send_child_seat_menu(reply_token):
+    buttons = [make_button(name, f"child_seat_{key}") for key, name in CHILD_SEATS.items()]
+    bubble = {
+        "type": "bubble",
+        "header": header_box("兒童安全座椅"),
+        "body": {"type": "box", "layout": "vertical", "contents": [
+            {"type": "text", "text": "是否需要兒童安全座椅？", "size": "md", "color": "#333333"},
+            {"type": "text", "text": "每張加收 NT$100，每車最多 2 張", "size": "xs", "color": "#E05C00", "margin": "sm"},
+        ] + buttons}
+    }
+    send_flex(reply_token, '兒童安全座椅', bubble)
+
+def send_sign_board_menu(reply_token):
+    bubble = {
+        "type": "bubble",
+        "header": header_box("舉牌服務"),
+        "body": {"type": "box", "layout": "vertical", "contents": [
+            {"type": "text", "text": "是否需要舉牌服務？", "size": "md", "color": "#333333"},
+            {"type": "text", "text": "司機於接機出口舉名牌等候，加收 NT$200", "size": "xs", "color": "#888888", "margin": "sm"},
+            make_button("需要舉牌（+NT$200）", "sign_board_yes"),
+            make_button("不需要", "sign_board_no"),
+        ]}
+    }
+    send_flex(reply_token, '舉牌服務', bubble)
+
+def send_pet_menu(reply_token):
+    bubble = {
+        "type": "bubble",
+        "header": header_box("寵物同行"),
+        "body": {"type": "box", "layout": "vertical", "contents": [
+            {"type": "text", "text": "是否有寵物同行？", "size": "md", "color": "#333333"},
+            {"type": "text", "text": "需指定九座車，加收車型費 NT$300 + 清潔費 NT$800", "size": "xs", "color": "#888888", "margin": "sm"},
+            make_button("有寵物同行（+NT$1,100）", "pet_yes"),
+            make_button("沒有", "pet_no"),
+        ]}
+    }
+    send_flex(reply_token, '寵物同行', bubble)
 
 def send_order_confirm(reply_token, session):
-    service = session.get('service_name', '')
-    vehicle = session.get('vehicle', '')
-    airport = session.get('airport', '')
-    pickup = session.get('pickup', '')
-    date = session.get('date', '')
-    time_val = session.get('time', '')
-    passengers = session.get('passengers', '')
-    luggage = session.get('luggage', '')
-    name = session.get('name', '')
-    phone = session.get('phone', '')
-    flight = session.get('flight', '')
-    note = session.get('note', '')
+    extras = []
+    if session.get('night_fee'): extras.append('夜間服務費 +NT$200')
+    if session.get('sign_board'): extras.append('舉牌服務 +NT$200')
+    if session.get('child_seat_count', 0):
+        extras.append(f'兒童安全座椅×{session["child_seat_count"]} +NT${session["child_seat_count"]*100}')
+    if session.get('pet'): extras.append('寵物同行 +NT$1,100')
 
     bubble = {
         "type": "bubble",
-        "header": {
-            "type": "box",
-            "layout": "vertical",
-            "backgroundColor": "#4A9B8F",
-            "contents": [
-                {"type": "text", "text": "確認預約資料", "color": "#FFFFFF", "size": "xl", "weight": "bold"}
-            ]
-        },
-        "body": {
-            "type": "box",
-            "layout": "vertical",
-            "contents": [
-                make_info_row("服務類型", service),
-                make_info_row("車型", vehicle),
-                make_info_row("機場", airport),
-                make_info_row("接送地點", pickup),
-                make_info_row("日期", date),
-                make_info_row("時間", time_val),
-                make_info_row("乘客人數", f"{passengers} 人"),
-                make_info_row("行李件數", f"{luggage} 件"),
-                make_info_row("姓名", name),
-                make_info_row("電話", phone),
-                make_info_row("航班", flight),
-                make_info_row("備註", note if note else "無"),
-                {"type": "separator", "margin": "md"},
-                {"type": "text", "text": "以上資料是否正確？", "margin": "md", "color": "#E05C00", "weight": "bold"}
-            ]
-        },
-        "footer": {
-            "type": "box",
-            "layout": "horizontal",
-            "contents": [
-                {
-                    "type": "button",
-                    "action": {"type": "postback", "label": "確認送出", "data": "confirm_order"},
-                    "style": "primary",
-                    "color": "#4A9B8F",
-                    "flex": 1
-                },
-                {"type": "separator"},
-                {
-                    "type": "button",
-                    "action": {"type": "postback", "label": "取消重填", "data": "cancel_order"},
-                    "style": "secondary",
-                    "flex": 1
-                }
-            ]
-        }
+        "header": header_box("確認預約資料"),
+        "body": {"type": "box", "layout": "vertical", "contents": [
+            make_info_row("服務類型", session.get('service_name', '')),
+            make_info_row("車型", session.get('vehicle', '')),
+            make_info_row("機場", session.get('airport', '')),
+            make_info_row("接送地點", session.get('pickup', '')),
+            make_info_row("日期", session.get('date', '')),
+            make_info_row("時間", session.get('time', '')),
+            make_info_row("乘客", f"{session.get('passengers', '')} 人"),
+            make_info_row("行李", f"{session.get('luggage', '')} 件"),
+            make_info_row("姓名", session.get('name', '')),
+            make_info_row("電話", session.get('phone', '')),
+            make_info_row("信箱", session.get('email', '') or '無'),
+            make_info_row("航班", session.get('flight', '') or '無'),
+            make_info_row("加購項目", '\n'.join(extras) if extras else '無'),
+            make_info_row("備註", session.get('note', '') or '無'),
+            {"type": "separator", "margin": "md"},
+            {"type": "text", "text": "以上資料是否正確？", "margin": "md", "color": "#E05C00", "weight": "bold"}
+        ]},
+        "footer": {"type": "box", "layout": "horizontal", "contents": [
+            {"type": "button", "action": {"type": "postback", "label": "確認送出", "data": "confirm_order"},
+             "style": "primary", "color": "#4A9B8F", "flex": 1},
+            {"type": "separator"},
+            {"type": "button", "action": {"type": "postback", "label": "取消重填", "data": "cancel_order"},
+             "style": "secondary", "flex": 1}
+        ]}
     }
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=reply_token,
-                messages=[FlexMessage(alt_text='確認預約資料', contents=FlexContainer.from_dict(bubble))]
-            )
-        )
-
-def make_info_row(label, value):
-    return {
-        "type": "box",
-        "layout": "horizontal",
-        "margin": "sm",
-        "contents": [
-            {"type": "text", "text": label, "size": "sm", "color": "#888888", "flex": 3},
-            {"type": "text", "text": str(value), "size": "sm", "color": "#333333", "flex": 5, "wrap": True}
-        ]
-    }
+    send_flex(reply_token, '確認預約資料', bubble)
 
 def save_order(reply_token, session, user_id):
     with app.app_context():
@@ -497,7 +659,13 @@ def save_order(reply_token, session, user_id):
             luggage=int(session.get('luggage', 0)),
             name=session.get('name', ''),
             phone=session.get('phone', ''),
+            email=session.get('email', ''),
             flight_number=session.get('flight', ''),
+            night_fee=session.get('night_fee', False),
+            sign_board=session.get('sign_board', False),
+            child_seat=session.get('child_seat', ''),
+            child_seat_count=session.get('child_seat_count', 0),
+            pet=session.get('pet', False),
             note=session.get('note', ''),
             status='待確認'
         )
@@ -507,75 +675,56 @@ def save_order(reply_token, session, user_id):
 
     bubble = {
         "type": "bubble",
-        "header": {
-            "type": "box",
-            "layout": "vertical",
-            "backgroundColor": "#4A9B8F",
-            "contents": [
-                {"type": "text", "text": "預約成功！", "color": "#FFFFFF", "size": "xl", "weight": "bold"}
-            ]
-        },
-        "body": {
-            "type": "box",
-            "layout": "vertical",
-            "contents": [
-                {"type": "text", "text": f"訂單編號：#{order_id}", "size": "lg", "weight": "bold", "color": "#4A9B8F"},
-                {"type": "text", "text": "我們將盡快與您確認。", "margin": "md", "wrap": True},
-                {"type": "text", "text": "如需查詢訂單，請輸入「查詢訂單」。", "margin": "sm", "size": "sm", "color": "#888888", "wrap": True}
-            ]
-        }
+        "header": header_box("預約成功！"),
+        "body": {"type": "box", "layout": "vertical", "contents": [
+            {"type": "text", "text": f"訂單編號：#{order_id}", "size": "lg", "weight": "bold", "color": "#4A9B8F"},
+            {"type": "text", "text": "我們將盡快與您確認訂單。", "margin": "md", "wrap": True},
+            {"type": "text", "text": "如需查詢訂單狀態，請輸入「查詢訂單」。", "margin": "sm", "size": "sm", "color": "#888888", "wrap": True},
+            {"type": "separator", "margin": "md"},
+            {"type": "text", "text": "注意事項", "margin": "md", "weight": "bold", "size": "sm"},
+            {"type": "text", "text": "• 請於出發日 48 小時前預約\n• 需變更請於 48 小時前來電\n• 車輛均投保 300 萬乘客險",
+             "size": "xs", "color": "#888888", "margin": "sm", "wrap": True}
+        ]}
     }
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=reply_token,
-                messages=[FlexMessage(alt_text='預約成功', contents=FlexContainer.from_dict(bubble))]
-            )
-        )
+    send_flex(reply_token, '預約成功', bubble)
 
 def send_order_query_result(reply_token, orders):
     bubbles = []
     for order in orders:
-        status_color = {'待確認': '#E05C00', '已確認': '#4A9B8F', '已完成': '#888888', '已取消': '#CC0000'}.get(order.status, '#333333')
         bubbles.append({
             "type": "bubble",
-            "header": {
-                "type": "box",
-                "layout": "vertical",
-                "backgroundColor": "#4A9B8F",
-                "contents": [
-                    {"type": "text", "text": f"訂單 #{order.id}", "color": "#FFFFFF", "size": "lg", "weight": "bold"},
-                    {"type": "text", "text": order.created_at.strftime('%Y-%m-%d %H:%M'), "color": "#DDDDDD", "size": "sm"}
-                ]
-            },
-            "body": {
-                "type": "box",
-                "layout": "vertical",
-                "contents": [
-                    make_info_row("狀態", order.status),
-                    make_info_row("服務", order.service_name),
-                    make_info_row("車型", order.vehicle),
-                    make_info_row("機場", order.airport),
-                    make_info_row("日期", order.booking_date),
-                    make_info_row("時間", order.booking_time),
-                ]
-            }
+            "header": {"type": "box", "layout": "vertical", "backgroundColor": "#4A9B8F", "contents": [
+                {"type": "text", "text": f"訂單 #{order.id}", "color": "#FFFFFF", "size": "lg", "weight": "bold"},
+                {"type": "text", "text": order.created_at.strftime('%Y-%m-%d %H:%M'), "color": "#DDDDDD", "size": "sm"}
+            ]},
+            "body": {"type": "box", "layout": "vertical", "contents": [
+                make_info_row("狀態", order.status),
+                make_info_row("服務", order.service_name),
+                make_info_row("車型", order.vehicle),
+                make_info_row("機場", order.airport),
+                make_info_row("日期", order.booking_date),
+                make_info_row("時間", order.booking_time),
+                make_info_row("地點", order.pickup_location),
+            ]}
         })
-    carousel = {"type": "carousel", "contents": bubbles}
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=reply_token,
-                messages=[FlexMessage(alt_text='訂單查詢結果', contents=FlexContainer.from_dict(carousel))]
-            )
-        )
+    send_flex(reply_token, '訂單查詢結果', {"type": "carousel", "contents": bubbles})
 
+# ── Start ─────────────────────────────────────────────────────────────
 if __name__ == '__main__':
-    with app.app_context():
-        init_db(app)
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(check_and_notify, 'interval', minutes=1)
+    scheduler.start()
+
     t = threading.Thread(target=keep_alive, daemon=True)
     t.start()
+
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
+else:
+    # 在 gunicorn 下也啟動排程
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(check_and_notify, 'interval', minutes=1)
+    scheduler.start()
+
+    t = threading.Thread(target=keep_alive, daemon=True)
+    t.start()

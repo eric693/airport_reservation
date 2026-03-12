@@ -8,7 +8,8 @@ class Order(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     line_user_id = db.Column(db.String(100), nullable=False)
-    service_type = db.Column(db.String(20), nullable=False)  # departure / arrival
+
+    service_type = db.Column(db.String(20), nullable=False)
     service_name = db.Column(db.String(50), nullable=False)
     vehicle = db.Column(db.String(50), nullable=False)
     airport = db.Column(db.String(50), nullable=False)
@@ -19,32 +20,44 @@ class Order(db.Model):
     luggage = db.Column(db.Integer, default=0)
     name = db.Column(db.String(50), nullable=False)
     phone = db.Column(db.String(20), nullable=False)
+    email = db.Column(db.String(100), default='')
     flight_number = db.Column(db.String(20), default='')
+    night_fee = db.Column(db.Boolean, default=False)
+    sign_board = db.Column(db.Boolean, default=False)
+    child_seat = db.Column(db.String(50), default='')
+    child_seat_count = db.Column(db.Integer, default=0)
+    pet = db.Column(db.Boolean, default=False)
     note = db.Column(db.Text, default='')
-    status = db.Column(db.String(20), default='待確認')  # 待確認/已確認/已完成/已取消
+    status = db.Column(db.String(20), default='待確認')
+
+    # 司機指派
+    driver_id = db.Column(db.Integer, db.ForeignKey('drivers.id'), nullable=True)
+    driver_notified = db.Column(db.Boolean, default=False)   # 是否已發送司機資料給客人
+    notify_at = db.Column(db.String(10), default='')          # 幾小時前發送，例如 '2' 表示出發前2小時
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'service_type': self.service_type,
-            'service_name': self.service_name,
-            'vehicle': self.vehicle,
-            'airport': self.airport,
-            'pickup_location': self.pickup_location,
-            'booking_date': self.booking_date,
-            'booking_time': self.booking_time,
-            'passengers': self.passengers,
-            'luggage': self.luggage,
-            'name': self.name,
-            'phone': self.phone,
-            'flight_number': self.flight_number,
-            'note': self.note,
-            'status': self.status,
-            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M') if self.created_at else '',
-        }
+    driver = db.relationship('Driver', backref='orders')
 
-def init_db(app):
-    with app.app_context():
-        db.create_all()
+    def extra_fees(self):
+        total = 0
+        if self.night_fee: total += 200
+        if self.sign_board: total += 200
+        if self.child_seat_count: total += self.child_seat_count * 100
+        if self.pet: total += 1100
+        return total
+
+
+class Driver(db.Model):
+    __tablename__ = 'drivers'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), nullable=False)
+    phone = db.Column(db.String(20), nullable=False)
+    car_brand = db.Column(db.String(50), default='')    # 車輛品牌，例如：Toyota Camry
+    car_plate = db.Column(db.String(20), default='')    # 車牌號碼
+    car_color = db.Column(db.String(20), default='')    # 車身顏色
+    note = db.Column(db.Text, default='')
+    active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)

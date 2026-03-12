@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>司機管理 - 機場接送管理後台</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', sans-serif; background: #F4F6F8; color: #2D3748; }
+
+  .sidebar { position: fixed; top: 0; left: 0; width: 220px; height: 100vh; background: #1A2B4A; display: flex; flex-direction: column; }
+  .sidebar-header { padding: 24px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+  .sidebar-title { color: #FFFFFF; font-size: 16px; font-weight: 700; }
+  .sidebar-sub { color: #8BA3C7; font-size: 11px; margin-top: 3px; letter-spacing: 1px; }
+  .sidebar-accent { width: 32px; height: 3px; background: #4A9B8F; margin-top: 10px; }
+  .sidebar-nav { padding: 16px 0; flex: 1; }
+  .nav-label { padding: 8px 20px 4px; font-size: 10px; color: #8BA3C7; letter-spacing: 1px; text-transform: uppercase; }
+  .nav-item { display: block; padding: 10px 20px; color: #B8C8DC; font-size: 14px; text-decoration: none; transition: all 0.2s; }
+  .nav-item:hover, .nav-item.active { background: rgba(74,155,143,0.15); color: #FFFFFF; border-left: 3px solid #4A9B8F; }
+  .sidebar-footer { padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1); color: #8BA3C7; font-size: 12px; }
+
+  .main { margin-left: 220px; padding: 32px; min-height: 100vh; }
+  .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+  .page-title { font-size: 24px; font-weight: 700; color: #1A2B4A; }
+
+  .card { background: #FFFFFF; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); overflow: hidden; margin-bottom: 24px; }
+  .card-header { padding: 16px 24px; border-bottom: 1px solid #EDF2F7; display: flex; align-items: center; justify-content: space-between; }
+  .card-title { font-size: 15px; font-weight: 600; color: #1A2B4A; }
+  .card-body { padding: 24px; }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-group.full { grid-column: 1 / -1; }
+  label { font-size: 12px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }
+  input, textarea, select { padding: 9px 12px; border: 1px solid #E2E8F0; border-radius: 6px; font-size: 14px; color: #2D3748; outline: none; font-family: inherit; }
+  input:focus, textarea:focus { border-color: #4A9B8F; }
+  textarea { resize: vertical; min-height: 60px; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { padding: 12px 16px; text-align: left; font-size: 11px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; background: #F7FAFC; border-bottom: 1px solid #EDF2F7; }
+  td { padding: 14px 16px; font-size: 13px; color: #2D3748; border-bottom: 1px solid #EDF2F7; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #F7FAFC; }
+
+  .badge-active { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; background: #E6F5F3; color: #2C7A73; }
+  .badge-inactive { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; background: #EDF2F7; color: #A0AEC0; }
+
+  .btn { display: inline-block; padding: 8px 18px; border-radius: 6px; font-size: 13px; font-weight: 500; text-decoration: none; cursor: pointer; border: none; transition: all 0.2s; }
+  .btn-primary { background: #4A9B8F; color: #FFFFFF; }
+  .btn-primary:hover { background: #3A8070; }
+  .btn-outline { background: transparent; color: #4A9B8F; border: 1px solid #4A9B8F; font-size: 12px; padding: 5px 12px; }
+  .btn-outline:hover { background: #4A9B8F; color: #FFFFFF; }
+  .btn-danger { background: transparent; color: #CC3333; border: 1px solid #CC3333; font-size: 12px; padding: 5px 12px; }
+  .btn-danger:hover { background: #CC3333; color: #FFFFFF; }
+
+  .flash-messages { margin-bottom: 20px; }
+  .flash { padding: 12px 16px; border-radius: 8px; background: #E6F5F3; color: #2C7A73; font-size: 14px; }
+
+  .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+  .modal-overlay.show { display: flex; }
+  .modal-box { background: #FFFFFF; border-radius: 12px; padding: 28px; max-width: 540px; width: 90%; max-height: 90vh; overflow-y: auto; }
+  .modal-title { font-size: 18px; font-weight: 700; color: #1A2B4A; margin-bottom: 20px; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+  .sub-text { font-size: 12px; color: #A0AEC0; }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-title">機場接送管理</div>
+    <div class="sidebar-sub">AIRPORT TRANSFER SYSTEM</div>
+    <div class="sidebar-accent"></div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">功能選單</div>
+    <a href="/admin" class="nav-item">訂單管理</a>
+    <a href="/admin/drivers" class="nav-item active">司機管理</a>
+  </nav>
+  <div class="sidebar-footer">管理員後台 v1.0</div>
+</div>
+
+<main class="main">
+  <div class="page-header">
+    <div class="page-title">司機管理</div>
+    <button class="btn btn-primary" onclick="document.getElementById('addModal').classList.add('show')">新增司機</button>
+  </div>
+
+  {% with messages = get_flashed_messages() %}
+  {% if messages %}
+  <div class="flash-messages">
+    {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
+  </div>
+  {% endif %}
+  {% endwith %}
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">司機列表</div></div>
+    {% if drivers %}
+    <table>
+      <thead>
+        <tr>
+          <th>姓名</th>
+          <th>電話</th>
+          <th>車輛品牌</th>
+          <th>車牌號碼</th>
+          <th>車身顏色</th>
+          <th>狀態</th>
+          <th>備註</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for driver in drivers %}
+        <tr>
+          <td><strong>{{ driver.name }}</strong></td>
+          <td>{{ driver.phone }}</td>
+          <td>{{ driver.car_brand or '—' }}</td>
+          <td>{{ driver.car_plate or '—' }}</td>
+          <td>{{ driver.car_color or '—' }}</td>
+          <td><span class="{{ 'badge-active' if driver.active else 'badge-inactive' }}">{{ '啟用' if driver.active else '停用' }}</span></td>
+          <td class="sub-text">{{ driver.note or '—' }}</td>
+          <td>
+            <button class="btn btn-outline" onclick="openEdit({{ driver.id }}, '{{ driver.name }}', '{{ driver.phone }}', '{{ driver.car_brand }}', '{{ driver.car_plate }}', '{{ driver.car_color }}', '{{ driver.note }}', {{ 'true' if driver.active else 'false' }})">編輯</button>
+            <form method="POST" action="/admin/drivers/{{ driver.id }}/delete" style="display:inline;" onsubmit="return confirm('確定刪除司機 {{ driver.name }}？')">
+              <button type="submit" class="btn btn-danger">刪除</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="card-body" style="text-align:center; color: #A0AEC0; padding: 60px;">尚未新增司機</div>
+    {% endif %}
+  </div>
+</main>
+
+<!-- 新增司機 Modal -->
+<div class="modal-overlay" id="addModal">
+  <div class="modal-box">
+    <div class="modal-title">新增司機</div>
+    <form method="POST" action="/admin/drivers/add">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>姓名</label>
+          <input type="text" name="name" required placeholder="王小明">
+        </div>
+        <div class="form-group">
+          <label>手機號碼</label>
+          <input type="text" name="phone" required placeholder="0912345678">
+        </div>
+        <div class="form-group">
+          <label>車輛品牌 / 型號</label>
+          <input type="text" name="car_brand" placeholder="Toyota Camry">
+        </div>
+        <div class="form-group">
+          <label>車牌號碼</label>
+          <input type="text" name="car_plate" placeholder="ABC-1234">
+        </div>
+        <div class="form-group">
+          <label>車身顏色</label>
+          <input type="text" name="car_color" placeholder="白色">
+        </div>
+        <div class="form-group full">
+          <label>備註</label>
+          <textarea name="note" placeholder="其他備註..."></textarea>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('addModal').classList.remove('show')">取消</button>
+        <button type="submit" class="btn btn-primary">新增</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 編輯司機 Modal -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal-box">
+    <div class="modal-title">編輯司機資料</div>
+    <form method="POST" id="editForm">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>姓名</label>
+          <input type="text" name="name" id="edit_name" required>
+        </div>
+        <div class="form-group">
+          <label>手機號碼</label>
+          <input type="text" name="phone" id="edit_phone" required>
+        </div>
+        <div class="form-group">
+          <label>車輛品牌 / 型號</label>
+          <input type="text" name="car_brand" id="edit_car_brand">
+        </div>
+        <div class="form-group">
+          <label>車牌號碼</label>
+          <input type="text" name="car_plate" id="edit_car_plate">
+        </div>
+        <div class="form-group">
+          <label>車身顏色</label>
+          <input type="text" name="car_color" id="edit_car_color">
+        </div>
+        <div class="form-group">
+          <label>狀態</label>
+          <select name="active" id="edit_active">
+            <option value="1">啟用</option>
+            <option value="0">停用</option>
+          </select>
+        </div>
+        <div class="form-group full">
+          <label>備註</label>
+          <textarea name="note" id="edit_note"></textarea>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('editModal').classList.remove('show')">取消</button>
+        <button type="submit" class="btn btn-primary">儲存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function openEdit(id, name, phone, car_brand, car_plate, car_color, note, active) {
+  document.getElementById('editForm').action = `/admin/drivers/${id}/edit`;
+  document.getElementById('edit_name').value = name;
+  document.getElementById('edit_phone').value = phone;
+  document.getElementById('edit_car_brand').value = car_brand;
+  document.getElementById('edit_car_plate').value = car_plate;
+  document.getElementById('edit_car_color').value = car_color;
+  document.getElementById('edit_note').value = note;
+  document.getElementById('edit_active').value = active ? '1' : '0';
+  document.getElementById('editModal').classList.add('show');
+}
+</script>
+</body>
+</html>

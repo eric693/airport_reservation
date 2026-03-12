@@ -8,11 +8,7 @@
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', sans-serif; background: #F4F6F8; color: #2D3748; }
 
-  .sidebar {
-    position: fixed; top: 0; left: 0; width: 220px; height: 100vh;
-    background: #1A2B4A; padding: 0;
-    display: flex; flex-direction: column;
-  }
+  .sidebar { position: fixed; top: 0; left: 0; width: 220px; height: 100vh; background: #1A2B4A; display: flex; flex-direction: column; }
   .sidebar-header { padding: 24px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
   .sidebar-title { color: #FFFFFF; font-size: 16px; font-weight: 700; }
   .sidebar-sub { color: #8BA3C7; font-size: 11px; margin-top: 3px; letter-spacing: 1px; }
@@ -20,16 +16,12 @@
   .sidebar-nav { padding: 16px 0; flex: 1; }
   .nav-label { padding: 8px 20px 4px; font-size: 10px; color: #8BA3C7; letter-spacing: 1px; text-transform: uppercase; }
   .nav-item { display: block; padding: 10px 20px; color: #B8C8DC; font-size: 14px; text-decoration: none; transition: all 0.2s; }
-  .nav-item:hover, .nav-item.active { background: rgba(74,155,143,0.15); color: #FFFFFF; border-left: 3px solid #4A9B8F; }
+  .nav-item:hover { background: rgba(74,155,143,0.15); color: #FFFFFF; border-left: 3px solid #4A9B8F; }
   .sidebar-footer { padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1); color: #8BA3C7; font-size: 12px; }
 
   .main { margin-left: 220px; padding: 32px; min-height: 100vh; }
-  
   .breadcrumb { font-size: 13px; color: #718096; margin-bottom: 20px; }
   .breadcrumb a { color: #4A9B8F; text-decoration: none; }
-  .breadcrumb a:hover { text-decoration: underline; }
-  .breadcrumb span { margin: 0 6px; }
-
   .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; flex-wrap: wrap; gap: 12px; }
   .page-title { font-size: 24px; font-weight: 700; color: #1A2B4A; }
   .header-actions { display: flex; gap: 10px; }
@@ -42,7 +34,6 @@
   .card-body { padding: 24px; }
 
   .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  .info-item {}
   .info-label { font-size: 11px; font-weight: 600; color: #A0AEC0; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
   .info-value { font-size: 14px; color: #2D3748; font-weight: 500; }
   .info-value.highlight { color: #4A9B8F; font-size: 16px; font-weight: 700; }
@@ -53,32 +44,59 @@
   .badge-completed { background: #EDF2F7; color: #718096; }
   .badge-cancelled { background: #FFF0F0; color: #CC3333; }
 
-  .status-form { }
-  .status-label { font-size: 12px; font-weight: 600; color: #718096; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
-  .status-select { width: 100%; padding: 9px 12px; border: 1px solid #E2E8F0; border-radius: 6px; font-size: 14px; color: #2D3748; background: #FFFFFF; outline: none; margin-bottom: 12px; }
-  .status-select:focus { border-color: #4A9B8F; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px; }
+  .tag-active { background: #E6F5F3; color: #2C7A73; }
+  .tag-inactive { background: #EDF2F7; color: #A0AEC0; }
+  .tag-warn { background: #FEF0E7; color: #E05C00; }
+
+  select, input[type="text"], input[type="number"] {
+    width: 100%; padding: 9px 12px; border: 1px solid #E2E8F0; border-radius: 6px;
+    font-size: 14px; color: #2D3748; background: #FFFFFF; outline: none; margin-bottom: 12px;
+    font-family: inherit;
+  }
+  select:focus, input:focus { border-color: #4A9B8F; }
+  .form-label { font-size: 12px; font-weight: 600; color: #718096; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; display: block; }
 
   .btn { display: inline-block; padding: 8px 18px; border-radius: 6px; font-size: 13px; font-weight: 500; text-decoration: none; cursor: pointer; border: none; transition: all 0.2s; text-align: center; }
   .btn-full { width: 100%; }
   .btn-primary { background: #4A9B8F; color: #FFFFFF; }
   .btn-primary:hover { background: #3A8070; }
+  .btn-secondary { background: #EDF2F7; color: #4A5568; }
+  .btn-secondary:hover { background: #E2E8F0; }
   .btn-outline { background: transparent; color: #4A9B8F; border: 1px solid #4A9B8F; }
   .btn-outline:hover { background: #4A9B8F; color: #FFFFFF; }
   .btn-danger { background: transparent; color: #CC3333; border: 1px solid #CC3333; }
   .btn-danger:hover { background: #CC3333; color: #FFFFFF; }
+  .btn-warn { background: #E05C00; color: #FFFFFF; }
+  .btn-warn:hover { background: #C04D00; }
+
+  .driver-card { background: #F0FAF8; border: 1px solid #C3E6E0; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+  .driver-card-label { font-size: 11px; font-weight: 600; color: #4A9B8F; text-transform: uppercase; margin-bottom: 8px; }
+  .driver-info-row { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; }
+  .driver-info-key { color: #718096; }
+  .driver-info-val { color: #2D3748; font-weight: 500; }
+
+  .notify-status { padding: 8px 12px; border-radius: 6px; font-size: 12px; text-align: center; margin-bottom: 12px; }
+  .notify-sent { background: #E6F5F3; color: #2C7A73; }
+  .notify-pending { background: #FEF0E7; color: #E05C00; }
 
   .note-box { background: #F7FAFC; border-left: 3px solid #4A9B8F; padding: 12px 16px; border-radius: 0 6px 6px 0; font-size: 14px; color: #2D3748; line-height: 1.6; }
   .note-empty { color: #A0AEC0; font-style: italic; }
 
+  .fee-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; border-bottom: 1px solid #EDF2F7; }
+  .fee-row:last-child { border-bottom: none; font-weight: 700; color: #E05C00; }
+
   .flash-messages { margin-bottom: 20px; }
   .flash { padding: 12px 16px; border-radius: 8px; background: #E6F5F3; color: #2C7A73; font-size: 14px; }
 
-  .confirm-modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
-  .confirm-modal.show { display: flex; }
+  .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+  .modal-overlay.show { display: flex; }
   .modal-box { background: #FFFFFF; border-radius: 12px; padding: 28px; max-width: 380px; width: 90%; }
   .modal-title { font-size: 18px; font-weight: 700; color: #1A2B4A; margin-bottom: 10px; }
   .modal-text { font-size: 14px; color: #718096; margin-bottom: 24px; line-height: 1.6; }
   .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+  .divider { border: none; border-top: 1px solid #EDF2F7; margin: 16px 0; }
 </style>
 </head>
 <body>
@@ -92,31 +110,26 @@
   <nav class="sidebar-nav">
     <div class="nav-label">功能選單</div>
     <a href="/admin" class="nav-item">訂單管理</a>
+    <a href="/admin/drivers" class="nav-item">司機管理</a>
   </nav>
   <div class="sidebar-footer">管理員後台 v1.0</div>
 </div>
 
 <main class="main">
   <div class="breadcrumb">
-    <a href="/admin">訂單管理</a>
-    <span>/</span>
-    訂單 #{{ order.id }}
+    <a href="/admin">訂單管理</a> / 訂單 #{{ order.id }}
   </div>
 
   {% with messages = get_flashed_messages() %}
   {% if messages %}
   <div class="flash-messages">
-    {% for message in messages %}
-    <div class="flash">{{ message }}</div>
-    {% endfor %}
+    {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
   </div>
   {% endif %}
   {% endwith %}
 
   <div class="page-header">
-    <div>
-      <div class="page-title">訂單 #{{ order.id }}</div>
-    </div>
+    <div class="page-title">訂單 #{{ order.id }}</div>
     <div class="header-actions">
       <a href="/admin" class="btn btn-outline">返回列表</a>
       <button class="btn btn-danger" onclick="document.getElementById('deleteModal').classList.add('show')">刪除訂單</button>
@@ -125,26 +138,15 @@
 
   <div class="content-grid">
     <div>
+
       <div class="card">
         <div class="card-header"><div class="card-title">客戶資料</div></div>
         <div class="card-body">
           <div class="info-grid">
-            <div class="info-item">
-              <div class="info-label">姓名</div>
-              <div class="info-value highlight">{{ order.name }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">手機號碼</div>
-              <div class="info-value highlight">{{ order.phone }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">航班號碼</div>
-              <div class="info-value">{{ order.flight_number if order.flight_number else '未填寫' }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">LINE User ID</div>
-              <div class="info-value" style="font-size:12px; color:#A0AEC0;">{{ order.line_user_id }}</div>
-            </div>
+            <div><div class="info-label">姓名</div><div class="info-value highlight">{{ order.name }}</div></div>
+            <div><div class="info-label">手機</div><div class="info-value highlight">{{ order.phone }}</div></div>
+            <div><div class="info-label">電子信箱</div><div class="info-value">{{ order.email or '未填寫' }}</div></div>
+            <div><div class="info-label">航班號碼</div><div class="info-value">{{ order.flight_number or '未填寫' }}</div></div>
           </div>
         </div>
       </div>
@@ -153,50 +155,49 @@
         <div class="card-header"><div class="card-title">預約內容</div></div>
         <div class="card-body">
           <div class="info-grid">
-            <div class="info-item">
-              <div class="info-label">服務類型</div>
-              <div class="info-value">{{ order.service_name }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">車型</div>
-              <div class="info-value">{{ order.vehicle }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">目的機場</div>
-              <div class="info-value">{{ order.airport }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">接送地點</div>
-              <div class="info-value">{{ order.pickup_location }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">接送日期</div>
-              <div class="info-value">{{ order.booking_date }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">接送時間</div>
-              <div class="info-value">{{ order.booking_time }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">乘客人數</div>
-              <div class="info-value">{{ order.passengers }} 人</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">行李件數</div>
-              <div class="info-value">{{ order.luggage }} 件</div>
-            </div>
+            <div><div class="info-label">服務類型</div><div class="info-value">{{ order.service_name }}</div></div>
+            <div><div class="info-label">車型</div><div class="info-value">{{ order.vehicle }}</div></div>
+            <div><div class="info-label">機場</div><div class="info-value">{{ order.airport }}</div></div>
+            <div><div class="info-label">接送地點</div><div class="info-value">{{ order.pickup_location }}</div></div>
+            <div><div class="info-label">接送日期</div><div class="info-value">{{ order.booking_date }}</div></div>
+            <div><div class="info-label">接送時間</div><div class="info-value">{{ order.booking_time }}</div></div>
+            <div><div class="info-label">乘客人數</div><div class="info-value">{{ order.passengers }} 人</div></div>
+            <div><div class="info-label">行李件數</div><div class="info-value">{{ order.luggage }} 件</div></div>
           </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><div class="card-title">加購項目</div></div>
+        <div class="card-body">
+          <div style="margin-bottom: 16px;">
+            <span class="tag {{ 'tag-warn' if order.night_fee else 'tag-inactive' }}">夜間加成{{ ' +NT$200' if order.night_fee else '（無）' }}</span>
+            <span class="tag {{ 'tag-active' if order.sign_board else 'tag-inactive' }}">舉牌服務{{ ' +NT$200' if order.sign_board else '（無）' }}</span>
+            <span class="tag {{ 'tag-active' if order.pet else 'tag-inactive' }}">寵物同行{{ ' +NT$1,100' if order.pet else '（無）' }}</span>
+          </div>
+          {% if order.child_seat and order.child_seat_count %}
+          <div style="margin-bottom: 12px;">
+            <div class="info-label">兒童安全座椅</div>
+            <div class="info-value">{{ order.child_seat }} × {{ order.child_seat_count }} 張（+NT${{ order.child_seat_count * 100 }}）</div>
+          </div>
+          {% endif %}
+          <hr class="divider">
+          {% if order.night_fee %}<div class="fee-row"><span>夜間服務費</span><span>NT$200</span></div>{% endif %}
+          {% if order.sign_board %}<div class="fee-row"><span>舉牌服務</span><span>NT$200</span></div>{% endif %}
+          {% if order.child_seat_count %}<div class="fee-row"><span>兒童安全座椅 × {{ order.child_seat_count }}</span><span>NT${{ order.child_seat_count * 100 }}</span></div>{% endif %}
+          {% if order.pet %}<div class="fee-row"><span>寵物同行</span><span>NT$1,100</span></div>{% endif %}
+          {% if order.extra_fees() > 0 %}
+          <div class="fee-row"><span>加購費用合計</span><span>NT${{ order.extra_fees() }}</span></div>
+          {% else %}
+          <div style="color: #A0AEC0; font-size: 13px;">無加購費用</div>
+          {% endif %}
         </div>
       </div>
 
       <div class="card">
         <div class="card-header"><div class="card-title">備註事項</div></div>
         <div class="card-body">
-          {% if order.note %}
-          <div class="note-box">{{ order.note }}</div>
-          {% else %}
-          <div class="note-box note-empty">無備註</div>
-          {% endif %}
+          <div class="note-box {% if not order.note %}note-empty{% endif %}">{{ order.note or '無備註' }}</div>
         </div>
       </div>
 
@@ -204,34 +205,32 @@
         <div class="card-header"><div class="card-title">時間記錄</div></div>
         <div class="card-body">
           <div class="info-grid">
-            <div class="info-item">
-              <div class="info-label">建立時間</div>
-              <div class="info-value">{{ order.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">最後更新</div>
-              <div class="info-value">{{ order.updated_at.strftime('%Y-%m-%d %H:%M:%S') if order.updated_at else '—' }}</div>
-            </div>
+            <div><div class="info-label">建立時間</div><div class="info-value">{{ order.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</div></div>
+            <div><div class="info-label">最後更新</div><div class="info-value">{{ order.updated_at.strftime('%Y-%m-%d %H:%M:%S') if order.updated_at else '—' }}</div></div>
           </div>
         </div>
       </div>
+
     </div>
 
+    <!-- 右側欄 -->
     <div>
+
+      <!-- 訂單狀態 -->
       <div class="card">
         <div class="card-header"><div class="card-title">訂單狀態</div></div>
         <div class="card-body">
           <div style="margin-bottom: 16px;">
             <div class="info-label">目前狀態</div>
             <div style="margin-top: 8px;">
-              <span class="badge badge-{{ {'待確認':'pending','已確認':'confirmed','已完成':'completed','已取消':'cancelled'}[order.status] }}">
+              <span class="badge badge-{{ {'待確認':'pending','已確認':'confirmed','已完成':'completed','已取消':'cancelled'}.get(order.status, 'pending') }}">
                 {{ order.status }}
               </span>
             </div>
           </div>
-          <form method="POST" action="/admin/order/{{ order.id }}/status" class="status-form">
-            <div class="status-label">更新狀態</div>
-            <select name="status" class="status-select">
+          <form method="POST" action="/admin/order/{{ order.id }}/status">
+            <label class="form-label">更新狀態</label>
+            <select name="status">
               <option value="待確認" {% if order.status == '待確認' %}selected{% endif %}>待確認</option>
               <option value="已確認" {% if order.status == '已確認' %}selected{% endif %}>已確認</option>
               <option value="已完成" {% if order.status == '已完成' %}selected{% endif %}>已完成</option>
@@ -241,11 +240,74 @@
           </form>
         </div>
       </div>
+
+      <!-- 指派司機 -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">指派司機</div></div>
+        <div class="card-body">
+
+          {% if order.driver %}
+          <div class="driver-card">
+            <div class="driver-card-label">目前指派司機</div>
+            <div class="driver-info-row"><span class="driver-info-key">姓名</span><span class="driver-info-val">{{ order.driver.name }}</span></div>
+            <div class="driver-info-row"><span class="driver-info-key">電話</span><span class="driver-info-val">{{ order.driver.phone }}</span></div>
+            <div class="driver-info-row"><span class="driver-info-key">車輛</span><span class="driver-info-val">{{ order.driver.car_brand }}</span></div>
+            <div class="driver-info-row"><span class="driver-info-key">車牌</span><span class="driver-info-val">{{ order.driver.car_plate }}</span></div>
+            <div class="driver-info-row"><span class="driver-info-key">顏色</span><span class="driver-info-val">{{ order.driver.car_color }}</span></div>
+          </div>
+
+          <div class="notify-status {{ 'notify-sent' if order.driver_notified else 'notify-pending' }}">
+            {% if order.driver_notified %}
+            司機資料已發送給客人
+            {% else %}
+            預計於出發前 {{ order.notify_at or '2' }} 小時自動發送
+            {% endif %}
+          </div>
+
+          {% if not order.driver_notified %}
+          <form method="POST" action="/admin/order/{{ order.id }}/notify_now" style="margin-bottom: 12px;">
+            <button type="submit" class="btn btn-warn btn-full">立即發送司機資料給客人</button>
+          </form>
+          {% endif %}
+
+          <hr class="divider">
+          {% endif %}
+
+          <form method="POST" action="/admin/order/{{ order.id }}/assign">
+            <label class="form-label">選擇司機</label>
+            <select name="driver_id">
+              <option value="">— 選擇司機 —</option>
+              {% for driver in drivers %}
+              <option value="{{ driver.id }}" {% if order.driver_id == driver.id %}selected{% endif %}>
+                {{ driver.name }}（{{ driver.car_plate }}）
+              </option>
+              {% endfor %}
+            </select>
+
+            <label class="form-label">發送時機</label>
+            <select name="notify_at">
+              <option value="24" {% if order.notify_at == '24' %}selected{% endif %}>出發前 24 小時</option>
+              <option value="12" {% if order.notify_at == '12' %}selected{% endif %}>出發前 12 小時</option>
+              <option value="6" {% if order.notify_at == '6' %}selected{% endif %}>出發前 6 小時</option>
+              <option value="3" {% if order.notify_at == '3' %}selected{% endif %}>出發前 3 小時</option>
+              <option value="2" {% if order.notify_at == '2' or not order.notify_at %}selected{% endif %}>出發前 2 小時</option>
+              <option value="1" {% if order.notify_at == '1' %}selected{% endif %}>出發前 1 小時</option>
+            </select>
+
+            <button type="submit" class="btn btn-primary btn-full">儲存指派</button>
+          </form>
+
+          <div style="margin-top: 10px; font-size: 11px; color: #A0AEC0; line-height: 1.6;">
+            儲存後系統將於指定時間自動透過 LINE 發送司機車牌、電話等資訊給客人。
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </main>
 
-<div class="confirm-modal" id="deleteModal">
+<div class="modal-overlay" id="deleteModal">
   <div class="modal-box">
     <div class="modal-title">確認刪除</div>
     <div class="modal-text">確定要刪除訂單 #{{ order.id }} 嗎？此操作無法復原。</div>
