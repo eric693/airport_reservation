@@ -322,7 +322,12 @@ def callback():
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
+        print('InvalidSignatureError - 請確認 LINE_CHANNEL_SECRET 環境變數正確')
         abort(400)
+    except Exception as e:
+        import traceback
+        print('Callback error:', traceback.format_exc())
+        abort(500)
     return 'OK'
 
 @app.route('/ping')
@@ -885,6 +890,13 @@ def admin_delete_holiday(hid):
 # ── LINE Handlers ────────────────────────────────────────────────────
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
+    try:
+        _handle_message_inner(event)
+    except Exception as e:
+        import traceback
+        print('handle_message error:', traceback.format_exc())
+
+def _handle_message_inner(event):
     user_id = event.source.user_id
     text = event.message.text.strip()
     session = user_sessions.get(user_id, {})
@@ -1086,6 +1098,13 @@ def handle_message(event):
 
 @handler.add(PostbackEvent)
 def handle_postback(event):
+    try:
+        _handle_postback_inner(event)
+    except Exception as e:
+        import traceback
+        print('handle_postback error:', traceback.format_exc())
+
+def _handle_postback_inner(event):
     user_id = event.source.user_id
     data = event.postback.data
     session = user_sessions.get(user_id, {})
