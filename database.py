@@ -83,5 +83,38 @@ class Driver(db.Model):
     car_plate = db.Column(db.String(20), default='')    # 車牌號碼
     car_color = db.Column(db.String(20), default='')    # 車身顏色
     note = db.Column(db.Text, default='')
+    line_user_id = db.Column(db.String(100), default='')   # 司機的 LINE User ID（用於推播搶單）
     active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class DispatchJob(db.Model):
+    """搶單任務 — 一張訂單對應一個搶單任務"""
+    __tablename__ = 'dispatch_jobs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(db.Integer, db.ForeignKey('orders.id'), nullable=False, unique=True)
+    status = db.Column(db.String(20), default='開放搶單')  # 開放搶單 / 已結單 / 已取消
+    grabbed_by = db.Column(db.Integer, db.ForeignKey('drivers.id'), nullable=True)  # 搶到的司機
+    grabbed_at = db.Column(db.DateTime, nullable=True)
+    deadline = db.Column(db.DateTime, nullable=True)          # 搶單截止時間（可選）
+    note = db.Column(db.String(200), default='')              # 後台備註
+    notify_customer = db.Column(db.Boolean, default=True)     # 搶到後自動通知客人
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    order = db.relationship('Order', backref=db.backref('dispatch_job', uselist=False))
+    winner = db.relationship('Driver', foreign_keys=[grabbed_by])
+
+
+class DispatchResponse(db.Model):
+    """每位司機的搶單回應記錄"""
+    __tablename__ = 'dispatch_responses'
+
+    id = db.Column(db.Integer, primary_key=True)
+    job_id = db.Column(db.Integer, db.ForeignKey('dispatch_jobs.id'), nullable=False)
+    driver_id = db.Column(db.Integer, db.ForeignKey('drivers.id'), nullable=False)
+    action = db.Column(db.String(10), default='搶單')  # 搶單 / 放棄
+    responded_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    job = db.relationship('DispatchJob', backref='responses')
+    driver = db.relationship('Driver')
