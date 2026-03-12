@@ -103,6 +103,21 @@ with app.app_context():
         ]
         db.session.add_all(defaults)
         db.session.commit()
+    # 預設區域報價規則
+    if PriceRule.query.count() == 0:
+        defaults = [
+            PriceRule(
+                name='台中－桃園機場',
+                airport_keyword='桃園',
+                region_keyword='台中,台中市,台中縣',
+                base_price=2200,
+                note='不指定車款，送機／接機同價 NT$2,200',
+                sort_order=1,
+                active=True,
+            ),
+        ]
+        db.session.add_all(defaults)
+        db.session.commit()
 
 configuration = Configuration(access_token=os.environ.get('LINE_CHANNEL_ACCESS_TOKEN'))
 handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
@@ -1452,11 +1467,11 @@ def send_extra_stops_menu(reply_token):
             make_info_row("12–18 公里", "+NT$400"),
             make_info_row("超過 18 公里", "+NT$500"),
         ]},
-        "footer": {"type": "box", "layout": "horizontal", "spacing": "sm", "contents": [
+        "footer": {"type": "box", "layout": "vertical", "spacing": "sm", "contents": [
             {"type": "button", "action": {"type": "postback", "label": "不需要，直接確認", "data": "no_extra_stops"},
-             "style": "primary", "color": "#4A9B8F", "flex": 1},
+             "style": "primary", "color": "#4A9B8F"},
             {"type": "button", "action": {"type": "postback", "label": "新增停靠點", "data": "add_extra_stop"},
-             "style": "secondary", "flex": 1},
+             "style": "secondary"},
         ]}
     }
     send_flex(reply_token, '多點停靠服務', bubble)
