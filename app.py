@@ -1163,13 +1163,15 @@ def send_service_menu(reply_token):
     send_flex(reply_token, '選擇服務類型', bubble)
 
 def send_vehicle_menu(reply_token):
-    buttons = [make_button(name, f"vehicle_{key}") for key, name in VEHICLE_TYPES.items()]
+    vehicles = get_vehicles()
+    buttons = [make_button(v.name, f"vehicle_{v.id}") for v in vehicles]
+    desc_lines = [f"• {v.name}：最多{v.capacity}人 / 大件{v.luggage_capacity}件" for v in vehicles]
     bubble = {
         "type": "bubble",
         "header": header_box("選擇車型"),
         "body": {"type": "box", "layout": "vertical", "contents": [
             {"type": "text", "text": "請選擇車型", "size": "md", "color": "#333333"},
-            {"type": "text", "text": "• 四座：4人 / 大件2件\n• 六座：6人 / 大件4件\n• SUV七座：7人 / 大件4件\n• 九座：9人 / 大件6件",
+            {"type": "text", "text": "\n".join(desc_lines),
              "size": "xs", "color": "#888888", "margin": "sm", "wrap": True},
         ] + buttons}
     }
