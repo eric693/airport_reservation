@@ -13,21 +13,43 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, PostbackEvent
 from apscheduler.schedulers.background import BackgroundScheduler
-from database import db, Order, Driver
+from database import db, Order, Driver, VehicleType, AirportOption
 from functools import wraps
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'change-this-secret')
 
 database_url = os.environ.get('DATABASE_URL', 'sqlite:///airport.db')
+# 將 postgres:// 轉為 postgresql+psycopg:// 以使用 psycopg v3 驅動
 if database_url.startswith('postgres://'):
-    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    database_url = database_url.replace('postgres://', 'postgresql+psycopg://', 1)
+elif database_url.startswith('postgresql://') and '+' not in database_url.split('://')[0]:
+    database_url = database_url.replace('postgresql://', 'postgresql+psycopg://', 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
 with app.app_context():
     db.create_all()
+    if VehicleType.query.count() == 0:
+        defaults = [
+            VehicleType(name='標準國產四座轎車', capacity=4, luggage_capacity=2, sort_order=1),
+            VehicleType(name='商務六座廂型車',   capacity=6, luggage_capacity=4, sort_order=2),
+            VehicleType(name='豪華七座SUV',      capacity=7, luggage_capacity=4, sort_order=3),
+            VehicleType(name='九座廂型車',       capacity=9, luggage_capacity=6, sort_order=4),
+        ]
+        db.session.add_all(defaults)
+        db.session.commit()
+    if AirportOption.query.count() == 0:
+        defaults = [
+            AirportOption(name='桃園機場第一航廈', code='tpe1', sort_order=1),
+            AirportOption(name='桃園機場第二航廈', code='tpe2', sort_order=2),
+            AirportOption(name='松山機場',         code='tsa',  sort_order=3),
+            AirportOption(name='台中清泉崗機場',   code='rmq',  sort_order=4),
+            AirportOption(name='高雄小港機場',     code='khh',  sort_order=5),
+        ]
+        db.session.add_all(defaults)
+        db.session.commit()
 
 configuration = Configuration(access_token=os.environ.get('LINE_CHANNEL_ACCESS_TOKEN'))
 handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
@@ -37,20 +59,11 @@ ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin1234')
 
 user_sessions = {}
 
-VEHICLE_TYPES = {
-    '1': '標準國產四座轎車',
-    '2': '商務六座廂型車',
-    '3': '豪華七座SUV',
-    '4': '九座廂型車',
-}
+def get_vehicles():
+    return VehicleType.query.filter_by(active=True).order_by(VehicleType.sort_order).all()
 
-AIRPORTS = {
-    'tpe1': '桃園機場第一航廈',
-    'tpe2': '桃園機場第二航廈',
-    'tsa': '松山機場',
-    'rmq': '台中清泉崗機場',
-    'khh': '高雄小港機場',
-}
+def get_airports():
+    return AirportOption.query.filter_by(active=True).order_by(AirportOption.sort_order).all()
 
 CHILD_SEATS = {
     'baby': '嬰兒幼童座椅型 (0-1歲)',
@@ -312,6 +325,92 @@ def admin_delete_driver(driver_id):
     flash('司機已刪除')
     return redirect(url_for('admin_drivers'))
 
+# ── Admin: Vehicles ─────────────────────────────────────────────────
+@app.route('/admin/vehicles')
+@admin_required
+def admin_vehicles():
+    vehicles = VehicleType.query.order_by(VehicleType.sort_order).all()
+    return render_template('admin/vehicles.html', vehicles=vehicles)
+
+@app.route('/admin/vehicles/add', methods=['POST'])
+@admin_required
+def admin_add_vehicle():
+    v = VehicleType(
+        name=request.form.get('name'),
+        capacity=int(request.form.get('capacity', 4)),
+        luggage_capacity=int(request.form.get('luggage_capacity', 2)),
+        note=request.form.get('note', ''),
+        sort_order=int(request.form.get('sort_order', 99)),
+    )
+    db.session.add(v)
+    db.session.commit()
+    flash('車型已新增')
+    return redirect(url_for('admin_vehicles'))
+
+@app.route('/admin/vehicles/<int:vid>/edit', methods=['POST'])
+@admin_required
+def admin_edit_vehicle(vid):
+    v = VehicleType.query.get_or_404(vid)
+    v.name = request.form.get('name')
+    v.capacity = int(request.form.get('capacity', 4))
+    v.luggage_capacity = int(request.form.get('luggage_capacity', 2))
+    v.note = request.form.get('note', '')
+    v.sort_order = int(request.form.get('sort_order', 99))
+    v.active = request.form.get('active') == '1'
+    db.session.commit()
+    flash('車型已更新')
+    return redirect(url_for('admin_vehicles'))
+
+@app.route('/admin/vehicles/<int:vid>/delete', methods=['POST'])
+@admin_required
+def admin_delete_vehicle(vid):
+    v = VehicleType.query.get_or_404(vid)
+    db.session.delete(v)
+    db.session.commit()
+    flash('車型已刪除')
+    return redirect(url_for('admin_vehicles'))
+
+# ── Admin: Airports ──────────────────────────────────────────────────
+@app.route('/admin/airports')
+@admin_required
+def admin_airports():
+    airports = AirportOption.query.order_by(AirportOption.sort_order).all()
+    return render_template('admin/airports.html', airports=airports)
+
+@app.route('/admin/airports/add', methods=['POST'])
+@admin_required
+def admin_add_airport():
+    a = AirportOption(
+        name=request.form.get('name'),
+        code=request.form.get('code', ''),
+        sort_order=int(request.form.get('sort_order', 99)),
+    )
+    db.session.add(a)
+    db.session.commit()
+    flash('機場已新增')
+    return redirect(url_for('admin_airports'))
+
+@app.route('/admin/airports/<int:aid>/edit', methods=['POST'])
+@admin_required
+def admin_edit_airport(aid):
+    a = AirportOption.query.get_or_404(aid)
+    a.name = request.form.get('name')
+    a.code = request.form.get('code', '')
+    a.sort_order = int(request.form.get('sort_order', 99))
+    a.active = request.form.get('active') == '1'
+    db.session.commit()
+    flash('機場已更新')
+    return redirect(url_for('admin_airports'))
+
+@app.route('/admin/airports/<int:aid>/delete', methods=['POST'])
+@admin_required
+def admin_delete_airport(aid):
+    a = AirportOption.query.get_or_404(aid)
+    db.session.delete(a)
+    db.session.commit()
+    flash('機場已刪除')
+    return redirect(url_for('admin_airports'))
+
 # ── LINE Handlers ────────────────────────────────────────────────────
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
@@ -456,15 +555,17 @@ def handle_postback(event):
         send_vehicle_menu(event.reply_token)
 
     elif data.startswith('vehicle_'):
-        v_key = data.replace('vehicle_', '')
-        session['vehicle'] = VEHICLE_TYPES.get(v_key, '標準國產四座轎車')
+        v_id = data.replace('vehicle_', '')
+        veh = VehicleType.query.get(int(v_id))
+        session['vehicle'] = veh.name if veh else '標準國產四座轎車'
         session['step'] = 'choose_airport'
         user_sessions[user_id] = session
         send_airport_menu(event.reply_token)
 
     elif data.startswith('airport_'):
-        a_key = data.replace('airport_', '')
-        session['airport'] = AIRPORTS.get(a_key, '桃園機場第一航廈')
+        a_id = data.replace('airport_', '')
+        apt = AirportOption.query.get(int(a_id))
+        session['airport'] = apt.name if apt else '桃園機場第一航廈'
         session['step'] = 'input_pickup'
         user_sessions[user_id] = session
         if session.get('service') == 'departure':
@@ -557,7 +658,8 @@ def send_vehicle_menu(reply_token):
     send_flex(reply_token, '選擇車型', bubble)
 
 def send_airport_menu(reply_token):
-    buttons = [make_button(name, f"airport_{key}") for key, name in AIRPORTS.items()]
+    airports = get_airports()
+    buttons = [make_button(a.name, f"airport_{a.id}") for a in airports]
     bubble = {
         "type": "bubble",
         "header": header_box("選擇機場"),

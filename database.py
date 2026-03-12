@@ -49,6 +49,30 @@ class Order(db.Model):
         return total
 
 
+class VehicleType(db.Model):
+    __tablename__ = 'vehicle_types'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), nullable=False)        # 顯示名稱，例如：標準國產四座轎車
+    capacity = db.Column(db.Integer, default=4)            # 最大乘客人數
+    luggage_capacity = db.Column(db.Integer, default=2)    # 大件行李數
+    note = db.Column(db.String(100), default='')           # 備註說明
+    sort_order = db.Column(db.Integer, default=0)          # 排序
+    active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AirportOption(db.Model):
+    __tablename__ = 'airport_options'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), nullable=False)        # 顯示名稱，例如：桃園機場第一航廈
+    code = db.Column(db.String(20), nullable=False)        # 代碼，例如：tpe1
+    sort_order = db.Column(db.Integer, default=0)          # 排序
+    active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class Driver(db.Model):
     __tablename__ = 'drivers'
 

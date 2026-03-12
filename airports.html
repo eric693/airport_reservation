@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>機場管理 - 機場接送管理後台</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', sans-serif; background: #F4F6F8; color: #2D3748; }
+  .sidebar { position: fixed; top: 0; left: 0; width: 220px; height: 100vh; background: #1A2B4A; display: flex; flex-direction: column; }
+  .sidebar-header { padding: 24px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+  .sidebar-title { color: #FFFFFF; font-size: 16px; font-weight: 700; }
+  .sidebar-sub { color: #8BA3C7; font-size: 11px; margin-top: 3px; letter-spacing: 1px; }
+  .sidebar-accent { width: 32px; height: 3px; background: #4A9B8F; margin-top: 10px; }
+  .sidebar-nav { padding: 16px 0; flex: 1; }
+  .nav-label { padding: 8px 20px 4px; font-size: 10px; color: #8BA3C7; letter-spacing: 1px; text-transform: uppercase; }
+  .nav-item { display: block; padding: 10px 20px; color: #B8C8DC; font-size: 14px; text-decoration: none; transition: all 0.2s; }
+  .nav-item:hover, .nav-item.active { background: rgba(74,155,143,0.15); color: #FFFFFF; border-left: 3px solid #4A9B8F; }
+  .sidebar-footer { padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1); color: #8BA3C7; font-size: 12px; }
+  .main { margin-left: 220px; padding: 32px; min-height: 100vh; }
+  .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+  .page-title { font-size: 24px; font-weight: 700; color: #1A2B4A; }
+  .page-sub { color: #718096; font-size: 14px; margin-top: 4px; }
+  .card { background: #FFFFFF; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); overflow: hidden; margin-bottom: 24px; }
+  .card-header { padding: 16px 24px; border-bottom: 1px solid #EDF2F7; }
+  .card-title { font-size: 15px; font-weight: 600; color: #1A2B4A; }
+  .card-body { padding: 24px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-group.full { grid-column: 1 / -1; }
+  label { font-size: 12px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }
+  input, select { padding: 9px 12px; border: 1px solid #E2E8F0; border-radius: 6px; font-size: 14px; color: #2D3748; outline: none; font-family: inherit; }
+  input:focus, select:focus { border-color: #4A9B8F; }
+  table { width: 100%; border-collapse: collapse; }
+  th { padding: 12px 16px; text-align: left; font-size: 11px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; background: #F7FAFC; border-bottom: 1px solid #EDF2F7; }
+  td { padding: 14px 16px; font-size: 13px; color: #2D3748; border-bottom: 1px solid #EDF2F7; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #F7FAFC; }
+  .badge-active { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; background: #E6F5F3; color: #2C7A73; }
+  .badge-inactive { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; background: #EDF2F7; color: #A0AEC0; }
+  .btn { display: inline-block; padding: 8px 18px; border-radius: 6px; font-size: 13px; font-weight: 500; text-decoration: none; cursor: pointer; border: none; transition: all 0.2s; }
+  .btn-primary { background: #4A9B8F; color: #FFFFFF; }
+  .btn-primary:hover { background: #3A8070; }
+  .btn-outline { background: transparent; color: #4A9B8F; border: 1px solid #4A9B8F; font-size: 12px; padding: 5px 12px; }
+  .btn-outline:hover { background: #4A9B8F; color: #FFFFFF; }
+  .btn-danger { background: transparent; color: #CC3333; border: 1px solid #CC3333; font-size: 12px; padding: 5px 12px; }
+  .btn-danger:hover { background: #CC3333; color: #FFFFFF; }
+  .flash-messages { margin-bottom: 20px; }
+  .flash { padding: 12px 16px; border-radius: 8px; background: #E6F5F3; color: #2C7A73; font-size: 14px; }
+  .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+  .modal-overlay.show { display: flex; }
+  .modal-box { background: #FFFFFF; border-radius: 12px; padding: 28px; max-width: 480px; width: 90%; }
+  .modal-title { font-size: 18px; font-weight: 700; color: #1A2B4A; margin-bottom: 20px; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+  .hint { font-size: 12px; color: #A0AEC0; margin-top: 4px; }
+  .code-tag { display: inline-block; background: #EDF2F7; color: #4A5568; padding: 2px 8px; border-radius: 4px; font-family: monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-title">機場接送管理</div>
+    <div class="sidebar-sub">AIRPORT TRANSFER SYSTEM</div>
+    <div class="sidebar-accent"></div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">功能選單</div>
+    <a href="/admin" class="nav-item">訂單管理</a>
+    <a href="/admin/drivers" class="nav-item">司機管理</a>
+    <a href="/admin/vehicles" class="nav-item">車型管理</a>
+    <a href="/admin/airports" class="nav-item active">機場管理</a>
+  </nav>
+  <div class="sidebar-footer">管理員後台 v1.0</div>
+</div>
+
+<main class="main">
+  <div class="page-header">
+    <div>
+      <div class="page-title">機場管理</div>
+      <div class="page-sub">管理 LINE Bot 中顯示的機場選項</div>
+    </div>
+    <button class="btn btn-primary" onclick="document.getElementById('addModal').classList.add('show')">新增機場</button>
+  </div>
+
+  {% with messages = get_flashed_messages() %}
+  {% if messages %}
+  <div class="flash-messages">{% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}</div>
+  {% endif %}
+  {% endwith %}
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">機場列表</div></div>
+    {% if airports %}
+    <table>
+      <thead>
+        <tr>
+          <th>排序</th>
+          <th>機場名稱</th>
+          <th>代碼</th>
+          <th>狀態</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in airports %}
+        <tr>
+          <td>{{ a.sort_order }}</td>
+          <td><strong>{{ a.name }}</strong></td>
+          <td><span class="code-tag">{{ a.code }}</span></td>
+          <td><span class="{{ 'badge-active' if a.active else 'badge-inactive' }}">{{ '啟用' if a.active else '停用' }}</span></td>
+          <td>
+            <button class="btn btn-outline edit-btn"
+              data-id="{{ a.id }}"
+              data-name="{{ a.name | e }}"
+              data-code="{{ a.code | e }}"
+              data-sort="{{ a.sort_order }}"
+              data-active="{{ '1' if a.active else '0' }}">編輯</button>
+            <form method="POST" action="/admin/airports/{{ a.id }}/delete" style="display:inline;"
+              onsubmit="return confirm('確定刪除此機場？')">
+              <button type="submit" class="btn btn-danger">刪除</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="card-body" style="text-align:center;color:#A0AEC0;padding:60px;">尚未新增機場</div>
+    {% endif %}
+  </div>
+</main>
+
+<!-- 新增 Modal -->
+<div class="modal-overlay" id="addModal">
+  <div class="modal-box">
+    <div class="modal-title">新增機場</div>
+    <form method="POST" action="/admin/airports/add">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>機場名稱</label>
+          <input type="text" name="name" required placeholder="例：桃園機場第一航廈">
+        </div>
+        <div class="form-group">
+          <label>代碼</label>
+          <input type="text" name="code" placeholder="例：tpe1">
+          <div class="hint">英文小寫，僅供識別用途</div>
+        </div>
+        <div class="form-group">
+          <label>排序（數字越小越前面）</label>
+          <input type="number" name="sort_order" value="99" min="0">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('addModal').classList.remove('show')">取消</button>
+        <button type="submit" class="btn btn-primary">新增</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 編輯 Modal -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal-box">
+    <div class="modal-title">編輯機場</div>
+    <form method="POST" id="editForm">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>機場名稱</label>
+          <input type="text" name="name" id="edit_name" required>
+        </div>
+        <div class="form-group">
+          <label>代碼</label>
+          <input type="text" name="code" id="edit_code">
+        </div>
+        <div class="form-group">
+          <label>排序</label>
+          <input type="number" name="sort_order" id="edit_sort" min="0">
+        </div>
+        <div class="form-group full">
+          <label>狀態</label>
+          <select name="active" id="edit_active">
+            <option value="1">啟用</option>
+            <option value="0">停用</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('editModal').classList.remove('show')">取消</button>
+        <button type="submit" class="btn btn-primary">儲存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.edit-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var d = this.dataset;
+    document.getElementById('editForm').action = '/admin/airports/' + d.id + '/edit';
+    document.getElementById('edit_name').value = d.name;
+    document.getElementById('edit_code').value = d.code;
+    document.getElementById('edit_sort').value = d.sort;
+    document.getElementById('edit_active').value = d.active;
+    document.getElementById('editModal').classList.add('show');
+  });
+});
+</script>
+</body>
+</html>
