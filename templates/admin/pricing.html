@@ -123,7 +123,7 @@
           <td><strong>{{ r.name }}</strong></td>
           <td>{{ r.airport_keyword or '（全部）' }}</td>
           <td>{{ r.region_keyword or '（全部）' }}</td>
-          <td><span class="price-tag">NT${{ r.base_price:, }}</span></td>
+          <td><span class="price-tag">NT${{ "{:,}".format(r.base_price) }}</span></td>
           <td class="note-text">{{ r.note or '—' }}</td>
           <td><span class="{{ 'badge-on' if r.active else 'badge-off' }}">{{ '啟用' if r.active else '停用' }}</span></td>
           <td>

@@ -1453,7 +1453,7 @@ def send_extra_stops_menu(reply_token):
             make_info_row("超過 18 公里", "+NT$500"),
         ]},
         "footer": {"type": "box", "layout": "horizontal", "spacing": "sm", "contents": [
-            {"type": "button", "action": {"type": "postback", "label": "不需要，直接報價", "data": "no_extra_stops"},
+            {"type": "button", "action": {"type": "postback", "label": "不需要，直接確認", "data": "no_extra_stops"},
              "style": "primary", "color": "#4A9B8F", "flex": 1},
             {"type": "button", "action": {"type": "postback", "label": "新增停靠點", "data": "add_extra_stop"},
              "style": "secondary", "flex": 1},
