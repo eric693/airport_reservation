@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>機場接送管理後台</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', sans-serif; background: #F4F6F8; color: #2D3748; }
+  
+  .sidebar {
+    position: fixed; top: 0; left: 0; width: 220px; height: 100vh;
+    background: #1A2B4A; padding: 0;
+    display: flex; flex-direction: column;
+  }
+  .sidebar-header {
+    padding: 24px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .sidebar-title { color: #FFFFFF; font-size: 16px; font-weight: 700; }
+  .sidebar-sub { color: #8BA3C7; font-size: 11px; margin-top: 3px; letter-spacing: 1px; }
+  .sidebar-accent { width: 32px; height: 3px; background: #4A9B8F; margin-top: 10px; }
+  .sidebar-nav { padding: 16px 0; flex: 1; }
+  .nav-label { padding: 8px 20px 4px; font-size: 10px; color: #8BA3C7; letter-spacing: 1px; text-transform: uppercase; }
+  .nav-item { display: block; padding: 10px 20px; color: #B8C8DC; font-size: 14px; text-decoration: none; transition: all 0.2s; }
+  .nav-item:hover, .nav-item.active { background: rgba(74,155,143,0.15); color: #FFFFFF; border-left: 3px solid #4A9B8F; }
+  .sidebar-footer { padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1); color: #8BA3C7; font-size: 12px; }
+
+  .main { margin-left: 220px; padding: 32px; min-height: 100vh; }
+  .page-header { margin-bottom: 28px; }
+  .page-title { font-size: 24px; font-weight: 700; color: #1A2B4A; }
+  .page-sub { color: #718096; font-size: 14px; margin-top: 4px; }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 28px; }
+  .stat-card { background: #FFFFFF; border-radius: 10px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+  .stat-label { font-size: 12px; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-number { font-size: 32px; font-weight: 700; margin-top: 6px; }
+  .stat-card.total .stat-number { color: #1A2B4A; }
+  .stat-card.pending .stat-number { color: #E05C00; }
+  .stat-card.confirmed .stat-number { color: #4A9B8F; }
+  .stat-card.completed .stat-number { color: #718096; }
+  .stat-card.cancelled .stat-number { color: #CC3333; }
+
+  .card { background: #FFFFFF; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); overflow: hidden; }
+  .card-header { padding: 18px 24px; border-bottom: 1px solid #EDF2F7; display: flex; align-items: center; justify-content: space-between; }
+  .card-title { font-size: 16px; font-weight: 600; color: #1A2B4A; }
+
+  .filter-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .filter-select { padding: 7px 12px; border: 1px solid #E2E8F0; border-radius: 6px; font-size: 13px; background: #FFFFFF; color: #2D3748; outline: none; }
+  .filter-select:focus { border-color: #4A9B8F; }
+  .search-input { padding: 7px 12px; border: 1px solid #E2E8F0; border-radius: 6px; font-size: 13px; outline: none; min-width: 180px; }
+  .search-input:focus { border-color: #4A9B8F; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { padding: 12px 16px; text-align: left; font-size: 11px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; background: #F7FAFC; border-bottom: 1px solid #EDF2F7; }
+  td { padding: 14px 16px; font-size: 13px; color: #2D3748; border-bottom: 1px solid #EDF2F7; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #F7FAFC; }
+
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-pending { background: #FEF0E7; color: #E05C00; }
+  .badge-confirmed { background: #E6F5F3; color: #2C7A73; }
+  .badge-completed { background: #EDF2F7; color: #718096; }
+  .badge-cancelled { background: #FFF0F0; color: #CC3333; }
+
+  .btn { display: inline-block; padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 500; text-decoration: none; cursor: pointer; border: none; transition: all 0.2s; }
+  .btn-primary { background: #4A9B8F; color: #FFFFFF; }
+  .btn-primary:hover { background: #3A8070; }
+  .btn-outline { background: transparent; color: #4A9B8F; border: 1px solid #4A9B8F; }
+  .btn-outline:hover { background: #4A9B8F; color: #FFFFFF; }
+
+  .service-tag { font-size: 11px; color: #718096; }
+
+  .flash-messages { margin-bottom: 20px; }
+  .flash { padding: 12px 16px; border-radius: 8px; background: #E6F5F3; color: #2C7A73; font-size: 14px; }
+
+  .empty-state { text-align: center; padding: 60px 20px; color: #A0AEC0; font-size: 14px; }
+
+  @media (max-width: 1200px) {
+    .stats-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-title">機場接送管理</div>
+    <div class="sidebar-sub">AIRPORT TRANSFER SYSTEM</div>
+    <div class="sidebar-accent"></div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">功能選單</div>
+    <a href="/admin" class="nav-item active">訂單管理</a>
+  </nav>
+  <div class="sidebar-footer">管理員後台 v1.0</div>
+</div>
+
+<main class="main">
+  <div class="page-header">
+    <div class="page-title">訂單管理</div>
+    <div class="page-sub">管理所有機場接送預約訂單</div>
+  </div>
+
+  {% with messages = get_flashed_messages() %}
+  {% if messages %}
+  <div class="flash-messages">
+    {% for message in messages %}
+    <div class="flash">{{ message }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endwith %}
+
+  <div class="stats-grid">
+    <div class="stat-card total">
+      <div class="stat-label">總訂單</div>
+      <div class="stat-number" id="stat-total">{{ orders|length }}</div>
+    </div>
+    <div class="stat-card pending">
+      <div class="stat-label">待確認</div>
+      <div class="stat-number" id="stat-pending">{{ orders|selectattr('status', 'equalto', '待確認')|list|length }}</div>
+    </div>
+    <div class="stat-card confirmed">
+      <div class="stat-label">已確認</div>
+      <div class="stat-number" id="stat-confirmed">{{ orders|selectattr('status', 'equalto', '已確認')|list|length }}</div>
+    </div>
+    <div class="stat-card completed">
+      <div class="stat-label">已完成</div>
+      <div class="stat-number" id="stat-completed">{{ orders|selectattr('status', 'equalto', '已完成')|list|length }}</div>
+    </div>
+    <div class="stat-card cancelled">
+      <div class="stat-label">已取消</div>
+      <div class="stat-number" id="stat-cancelled">{{ orders|selectattr('status', 'equalto', '已取消')|list|length }}</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">所有訂單</div>
+      <div class="filter-bar">
+        <input class="search-input" type="text" id="searchInput" placeholder="搜尋姓名、電話、訂單號...">
+        <select class="filter-select" id="statusFilter">
+          <option value="">全部狀態</option>
+          <option value="待確認">待確認</option>
+          <option value="已確認">已確認</option>
+          <option value="已完成">已完成</option>
+          <option value="已取消">已取消</option>
+        </select>
+        <select class="filter-select" id="serviceFilter">
+          <option value="">全部服務</option>
+          <option value="departure">送機出境</option>
+          <option value="arrival">接機回國</option>
+        </select>
+      </div>
+    </div>
+
+    {% if orders %}
+    <table id="ordersTable">
+      <thead>
+        <tr>
+          <th>訂單編號</th>
+          <th>姓名 / 電話</th>
+          <th>服務 / 車型</th>
+          <th>機場</th>
+          <th>日期 / 時間</th>
+          <th>人數 / 行李</th>
+          <th>狀態</th>
+          <th>建立時間</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for order in orders %}
+        <tr data-status="{{ order.status }}" data-service="{{ order.service_type }}">
+          <td><strong>#{{ order.id }}</strong></td>
+          <td>
+            <div>{{ order.name }}</div>
+            <div class="service-tag">{{ order.phone }}</div>
+          </td>
+          <td>
+            <div>{{ order.service_name }}</div>
+            <div class="service-tag">{{ order.vehicle }}</div>
+          </td>
+          <td>{{ order.airport }}</td>
+          <td>
+            <div>{{ order.booking_date }}</div>
+            <div class="service-tag">{{ order.booking_time }}</div>
+          </td>
+          <td>{{ order.passengers }}人 / {{ order.luggage }}件</td>
+          <td>
+            <span class="badge badge-{{ {'待確認':'pending','已確認':'confirmed','已完成':'completed','已取消':'cancelled'}[order.status] }}">
+              {{ order.status }}
+            </span>
+          </td>
+          <td class="service-tag">{{ order.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td><a href="/admin/order/{{ order.id }}" class="btn btn-outline">查看</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">目前尚無訂單資料</div>
+    {% endif %}
+  </div>
+</main>
+
+<script>
+const searchInput = document.getElementById('searchInput');
+const statusFilter = document.getElementById('statusFilter');
+const serviceFilter = document.getElementById('serviceFilter');
+
+function filterTable() {
+  const search = searchInput.value.toLowerCase();
+  const status = statusFilter.value;
+  const service = serviceFilter.value;
+  document.querySelectorAll('#ordersTable tbody tr').forEach(row => {
+    const text = row.innerText.toLowerCase();
+    const rowStatus = row.dataset.status;
+    const rowService = row.dataset.service;
+    const matchSearch = !search || text.includes(search);
+    const matchStatus = !status || rowStatus === status;
+    const matchService = !service || rowService === service;
+    row.style.display = matchSearch && matchStatus && matchService ? '' : 'none';
+  });
+}
+
+searchInput.addEventListener('input', filterTable);
+statusFilter.addEventListener('change', filterTable);
+serviceFilter.addEventListener('change', filterTable);
+</script>
+</body>
+</html>
