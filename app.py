@@ -5,6 +5,7 @@ import threading
 import time
 import requests
 from datetime import datetime, timedelta
+from sqlalchemy.pool import NullPool
 from flask import Flask, request, abort, render_template, redirect, url_for, flash, jsonify
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
@@ -15,7 +16,7 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, PostbackEvent
 from apscheduler.schedulers.background import BackgroundScheduler
-from database import db, Order, Driver, VehicleType, AirportOption, DispatchJob, DispatchResponse
+from database import db, Order, Driver, VehicleType, AirportOption, DispatchJob, DispatchResponse, PriceRule, PriceSurcharge, HolidaySurcharge
 from functools import wraps
 
 app = Flask(__name__)
@@ -29,6 +30,11 @@ elif database_url.startswith('postgresql://') and '+' not in database_url.split(
     database_url = database_url.replace('postgresql://', 'postgresql+psycopg://', 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# 修正 psycopg v3 SSL 連線逾時問題：定期回收連線
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'poolclass': NullPool,   # 每次請求用完即關閉連線，解決 SSL 逾時問題
+    'pool_pre_ping': True,
+}
 
 db.init_app(app)
 with app.app_context():
@@ -52,6 +58,31 @@ with app.app_context():
         ]
         db.session.add_all(defaults)
         db.session.commit()
+    if PriceSurcharge.query.count() == 0:
+        defaults = [
+            PriceSurcharge(key='night',      name='夜間服務費（22:00-06:00）', amount=200),
+            PriceSurcharge(key='sign_board', name='舉牌服務',                  amount=300),
+            PriceSurcharge(key='child_seat', name='兒童安全座椅（每張）',      amount=200),
+            PriceSurcharge(key='pet',        name='寵物同行',                  amount=1100),
+            PriceSurcharge(key='extra_stop', name='多點加收（每點/5公里內）',  amount=200),
+            PriceSurcharge(key='invoice',    name='開立發票加收',              amount=0, note='基本價5%'),
+            PriceSurcharge(key='short_book', name='七天內預約加收',            amount=300),
+            PriceSurcharge(key='urgent',     name='三天內臨時單加收',          amount=300),
+        ]
+        db.session.add_all(defaults)
+        db.session.commit()
+    if HolidaySurcharge.query.count() == 0:
+        defaults = [
+            HolidaySurcharge(name='清明連假',   date_from='04-02', date_to='04-07', amount=300),
+            HolidaySurcharge(name='勞動節連假', date_from='04-30', date_to='05-04', amount=300),
+            HolidaySurcharge(name='端午連假',   date_from='06-18', date_to='06-22', amount=300),
+            HolidaySurcharge(name='中秋連假',   date_from='09-24', date_to='09-29', amount=300),
+            HolidaySurcharge(name='國慶連假',   date_from='10-08', date_to='10-12', amount=300),
+            HolidaySurcharge(name='重陽連假',   date_from='10-23', date_to='10-27', amount=300),
+            HolidaySurcharge(name='耶誕連假',   date_from='12-24', date_to='12-28', amount=300),
+        ]
+        db.session.add_all(defaults)
+        db.session.commit()
 
 configuration = Configuration(access_token=os.environ.get('LINE_CHANNEL_ACCESS_TOKEN'))
 handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
@@ -60,6 +91,7 @@ ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin1234')
 ADMIN_LINE_USER_ID = os.environ.get('ADMIN_LINE_USER_ID', '')  # 後台管理員的 LINE User ID（搶單成功時收通知）
 AUTO_DISPATCH = os.environ.get('AUTO_DISPATCH', '0') == '1'   # 設為 1 時，客人送出預約後自動發布搶單
+GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')  # Google Maps API Key（用於多點距離計算）
 
 user_sessions = {}
 
@@ -558,6 +590,261 @@ def push_dispatch_to_driver(driver, order, job):
             )
         )
 
+# ── 距離計算（Google Maps）────────────────────────────────────────────
+EXTRA_STOP_TIERS = [
+    (5,   200),   # 0-5 公里
+    (12,  300),   # 5-12 公里
+    (18,  400),   # 12-18 公里
+    (999, 500),   # 超過 18 公里
+]
+
+def get_distance_km(origin, destination):
+    """呼叫 Google Maps Distance Matrix API 取得兩點距離（公里）"""
+    if not GOOGLE_MAPS_API_KEY:
+        return None
+    try:
+        url = 'https://maps.googleapis.com/maps/api/distancematrix/json'
+        params = {
+            'origins': origin,
+            'destinations': destination,
+            'key': GOOGLE_MAPS_API_KEY,
+            'language': 'zh-TW',
+            'region': 'tw',
+        }
+        resp = requests.get(url, params=params, timeout=5)
+        data = resp.json()
+        meters = data['rows'][0]['elements'][0]['distance']['value']
+        return round(meters / 1000, 1)
+    except Exception as e:
+        print(f'Distance API error: {e}')
+        return None
+
+def calc_extra_stop_fee(distance_km):
+    """根據距離計算多點加收金額"""
+    if distance_km is None:
+        return None, None
+    for limit, fee in EXTRA_STOP_TIERS:
+        if distance_km <= limit:
+            return fee, distance_km
+    return 500, distance_km
+
+
+# ── 報價計算 ─────────────────────────────────────────────────────────
+def calculate_quote(order):
+    """根據訂單內容計算報價，回傳 dict"""
+    result = {
+        'base_price': 0,
+        'base_rule': '未設定區域報價',
+        'surcharges': [],
+        'holiday': None,
+        'holiday_amount': 0,
+        'total': 0,
+        'breakdown': [],
+    }
+    # 1. 基本價：比對區域規則
+    rules = PriceRule.query.filter_by(active=True).order_by(PriceRule.sort_order).all()
+    for rule in rules:
+        airport_match = not rule.airport_keyword or rule.airport_keyword in order.airport
+        region_match = not rule.region_keyword or any(
+            kw.strip() in order.pickup_location
+            for kw in rule.region_keyword.split(',')
+        )
+        if airport_match and region_match:
+            result['base_price'] = rule.base_price
+            result['base_rule'] = rule.name
+            result['breakdown'].append({'label': f'基本車資（{rule.name}）', 'amount': rule.base_price})
+            break
+
+    # 2. 夜間加費
+    surcharge_map = {s.key: s for s in PriceSurcharge.query.filter_by(enabled=True).all()}
+    if order.night_fee and 'night' in surcharge_map:
+        amt = surcharge_map['night'].amount
+        result['surcharges'].append({'label': surcharge_map['night'].name, 'amount': amt})
+        result['breakdown'].append({'label': surcharge_map['night'].name, 'amount': amt})
+
+    # 3. 舉牌服務
+    if order.sign_board and 'sign_board' in surcharge_map:
+        amt = surcharge_map['sign_board'].amount
+        result['surcharges'].append({'label': surcharge_map['sign_board'].name, 'amount': amt})
+        result['breakdown'].append({'label': surcharge_map['sign_board'].name, 'amount': amt})
+
+    # 4. 兒童安全座椅
+    if order.child_seat_count and 'child_seat' in surcharge_map:
+        amt = surcharge_map['child_seat'].amount * order.child_seat_count
+        label = f'{surcharge_map["child_seat"].name} x{order.child_seat_count}'
+        result['surcharges'].append({'label': label, 'amount': amt})
+        result['breakdown'].append({'label': label, 'amount': amt})
+
+    # 5. 寵物同行
+    if order.pet and 'pet' in surcharge_map:
+        amt = surcharge_map['pet'].amount
+        result['surcharges'].append({'label': surcharge_map['pet'].name, 'amount': amt})
+        result['breakdown'].append({'label': surcharge_map['pet'].name, 'amount': amt})
+
+    # 6. 七天內 / 三天內預約加收
+    try:
+        from datetime import date
+        booking = date.fromisoformat(order.booking_date)
+        today = date.today()
+        days_ahead = (booking - today).days
+        if days_ahead <= 3 and 'urgent' in surcharge_map:
+            amt = surcharge_map['urgent'].amount
+            result['surcharges'].append({'label': surcharge_map['urgent'].name, 'amount': amt})
+            result['breakdown'].append({'label': surcharge_map['urgent'].name, 'amount': amt})
+        elif days_ahead <= 7 and 'short_book' in surcharge_map:
+            amt = surcharge_map['short_book'].amount
+            result['surcharges'].append({'label': surcharge_map['short_book'].name, 'amount': amt})
+            result['breakdown'].append({'label': surcharge_map['short_book'].name, 'amount': amt})
+    except Exception:
+        pass
+
+    # 7. 假日加收
+    try:
+        booking_md = order.booking_date[5:]  # MM-DD
+        holidays = HolidaySurcharge.query.filter_by(active=True).all()
+        for h in holidays:
+            if h.date_from <= booking_md <= h.date_to:
+                result['holiday'] = h.name
+                result['holiday_amount'] = h.amount
+                result['surcharges'].append({'label': f'假日加收（{h.name}）', 'amount': h.amount})
+                result['breakdown'].append({'label': f'假日加收（{h.name}）', 'amount': h.amount})
+                break
+    except Exception:
+        pass
+
+    result['total'] = result['base_price'] + sum(s['amount'] for s in result['surcharges'])
+    return result
+
+
+def send_quote_to_customer(order):
+    """預約成功後推播報價給客人"""
+    quote = calculate_quote(order)
+    if quote['base_price'] == 0:
+        return  # 無報價規則，不推播
+
+    rows = [make_info_row(item['label'], f"NT${item['amount']:,}") for item in quote['breakdown']]
+    rows.append({"type": "separator", "margin": "md"})
+    rows.append({
+        "type": "box", "layout": "horizontal", "margin": "md",
+        "contents": [
+            {"type": "text", "text": "預估總費用", "weight": "bold", "flex": 3, "size": "md"},
+            {"type": "text", "text": f"NT${quote['total']:,}", "weight": "bold", "flex": 5,
+             "color": "#E05C00", "size": "lg", "align": "end"}
+        ]
+    })
+    rows.append({
+        "type": "text",
+        "text": "以上為預估報價，實際費用以出發當日為準。如有疑問請聯繫客服。",
+        "size": "xs", "color": "#A0AEC0", "margin": "md", "wrap": True
+    })
+
+    bubble = {
+        "type": "bubble",
+        "header": {"type": "box", "layout": "vertical", "backgroundColor": "#1A2B4A",
+            "contents": [
+                {"type": "text", "text": "預約報價明細", "color": "#FFFFFF", "size": "xl", "weight": "bold"},
+                {"type": "text", "text": f"訂單 #{order.id}　{order.booking_date} {order.booking_time}",
+                 "color": "#8BA3C7", "size": "sm"}
+            ]},
+        "body": {"type": "box", "layout": "vertical", "contents": rows}
+    }
+    try:
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).push_message(
+                PushMessageRequest(
+                    to=order.line_user_id,
+                    messages=[FlexMessage(alt_text='您的預約報價明細', contents=FlexContainer.from_dict(bubble))]
+                )
+            )
+    except Exception as e:
+        print(f'Quote push error: {e}')
+
+
+# ── Admin: Pricing ────────────────────────────────────────────────────
+@app.route('/admin/pricing')
+@admin_required
+def admin_pricing():
+    rules = PriceRule.query.order_by(PriceRule.sort_order).all()
+    surcharges = PriceSurcharge.query.all()
+    holidays = HolidaySurcharge.query.order_by(HolidaySurcharge.date_from).all()
+    return render_template('admin/pricing.html', rules=rules, surcharges=surcharges, holidays=holidays)
+
+@app.route('/admin/pricing/rules/add', methods=['POST'])
+@admin_required
+def admin_add_price_rule():
+    r = PriceRule(
+        name=request.form.get('name'),
+        airport_keyword=request.form.get('airport_keyword',''),
+        region_keyword=request.form.get('region_keyword',''),
+        base_price=int(request.form.get('base_price',0)),
+        note=request.form.get('note',''),
+        sort_order=int(request.form.get('sort_order',99)),
+    )
+    db.session.add(r); db.session.commit()
+    flash('報價規則已新增'); return redirect(url_for('admin_pricing'))
+
+@app.route('/admin/pricing/rules/<int:rid>/edit', methods=['POST'])
+@admin_required
+def admin_edit_price_rule(rid):
+    r = PriceRule.query.get_or_404(rid)
+    r.name = request.form.get('name')
+    r.airport_keyword = request.form.get('airport_keyword','')
+    r.region_keyword = request.form.get('region_keyword','')
+    r.base_price = int(request.form.get('base_price',0))
+    r.note = request.form.get('note','')
+    r.sort_order = int(request.form.get('sort_order',99))
+    r.active = request.form.get('active') == '1'
+    db.session.commit()
+    flash('報價規則已更新'); return redirect(url_for('admin_pricing'))
+
+@app.route('/admin/pricing/rules/<int:rid>/delete', methods=['POST'])
+@admin_required
+def admin_delete_price_rule(rid):
+    r = PriceRule.query.get_or_404(rid)
+    db.session.delete(r); db.session.commit()
+    flash('報價規則已刪除'); return redirect(url_for('admin_pricing'))
+
+@app.route('/admin/pricing/surcharges/<int:sid>/edit', methods=['POST'])
+@admin_required
+def admin_edit_surcharge(sid):
+    s = PriceSurcharge.query.get_or_404(sid)
+    s.amount = int(request.form.get('amount', s.amount))
+    s.enabled = request.form.get('enabled') == '1'
+    s.note = request.form.get('note', '')
+    db.session.commit()
+    flash(f'{s.name} 已更新'); return redirect(url_for('admin_pricing'))
+
+@app.route('/admin/pricing/holidays/add', methods=['POST'])
+@admin_required
+def admin_add_holiday():
+    h = HolidaySurcharge(
+        name=request.form.get('name',''),
+        date_from=request.form.get('date_from'),
+        date_to=request.form.get('date_to'),
+        amount=int(request.form.get('amount',300)),
+    )
+    db.session.add(h); db.session.commit()
+    flash('假日加收已新增'); return redirect(url_for('admin_pricing'))
+
+@app.route('/admin/pricing/holidays/<int:hid>/edit', methods=['POST'])
+@admin_required
+def admin_edit_holiday(hid):
+    h = HolidaySurcharge.query.get_or_404(hid)
+    h.name = request.form.get('name','')
+    h.date_from = request.form.get('date_from')
+    h.date_to = request.form.get('date_to')
+    h.amount = int(request.form.get('amount',300))
+    h.active = request.form.get('active') == '1'
+    db.session.commit()
+    flash('假日加收已更新'); return redirect(url_for('admin_pricing'))
+
+@app.route('/admin/pricing/holidays/<int:hid>/delete', methods=['POST'])
+@admin_required
+def admin_delete_holiday(hid):
+    h = HolidaySurcharge.query.get_or_404(hid)
+    db.session.delete(h); db.session.commit()
+    flash('假日加收已刪除'); return redirect(url_for('admin_pricing'))
+
 # ── LINE Handlers ────────────────────────────────────────────────────
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
@@ -681,9 +968,46 @@ def handle_message(event):
 
     elif step == 'input_note':
         session['note'] = '' if text == '無' else text
-        session['step'] = 'confirm'
+        session['step'] = 'ask_extra_stops'
+        session['extra_stops'] = []
+        session['extra_stop_fee'] = 0
         user_sessions[user_id] = session
-        send_order_confirm(event.reply_token, session)
+        send_extra_stops_menu(event.reply_token)
+
+    elif step == 'input_extra_stop':
+        stop_addr = text.strip()
+        stops = session.get('extra_stops', [])
+        # 計算與主接送地點或上一個點的距離
+        origin = stops[-1] if stops else session.get('pickup', '')
+        distance_km = get_distance_km(origin, stop_addr)
+        fee, km = calc_extra_stop_fee(distance_km)
+        stops.append(stop_addr)
+        session['extra_stops'] = stops
+        if fee:
+            session['extra_stop_fee'] = session.get('extra_stop_fee', 0) + fee
+            dist_text = f'（距離約 {km} 公里，加收 NT${fee}）'
+        else:
+            dist_text = '（距離計算失敗，費用待確認）'
+        session['step'] = 'ask_more_stops'
+        user_sessions[user_id] = session
+        total_stops = len(stops)
+        reply_text(event.reply_token,
+            f'已新增第 {total_stops} 個停靠點：{stop_addr}\n{dist_text}\n\n'
+            f'目前多點加收合計：NT${session["extra_stop_fee"]}\n\n'
+            f'是否還要新增停靠點？\n輸入「繼續」新增下一點\n輸入「完成」進入確認'
+        )
+
+    elif step == 'ask_more_stops':
+        if text == '繼續':
+            session['step'] = 'input_extra_stop'
+            user_sessions[user_id] = session
+            stop_num = len(session.get('extra_stops', [])) + 1
+            reply_text(event.reply_token, f'請輸入第 {stop_num} 個停靠點地址：')
+        else:
+            # 完成 or 任何其他輸入都進入確認
+            session['step'] = 'confirm'
+            user_sessions[user_id] = session
+            send_order_confirm(event.reply_token, session)
 
     else:
         send_main_menu(event.reply_token)
@@ -865,34 +1189,121 @@ def send_pet_menu(reply_token):
     }
     send_flex(reply_token, '寵物同行', bubble)
 
-def send_order_confirm(reply_token, session):
-    extras = []
-    if session.get('night_fee'): extras.append('夜間服務費 +NT$200')
-    if session.get('sign_board'): extras.append('舉牌服務 +NT$200')
-    if session.get('child_seat_count', 0):
-        extras.append(f'兒童安全座椅×{session["child_seat_count"]} +NT${session["child_seat_count"]*100}')
-    if session.get('pet'): extras.append('寵物同行 +NT$1,100')
-
+def send_extra_stops_menu(reply_token):
+    """詢問是否有多點停靠"""
     bubble = {
         "type": "bubble",
-        "header": header_box("確認預約資料"),
+        "header": header_box("多點停靠服務"),
         "body": {"type": "box", "layout": "vertical", "contents": [
-            make_info_row("服務類型", session.get('service_name', '')),
-            make_info_row("車型", session.get('vehicle', '')),
-            make_info_row("機場", session.get('airport', '')),
-            make_info_row("接送地點", session.get('pickup', '')),
-            make_info_row("日期", session.get('date', '')),
-            make_info_row("時間", session.get('time', '')),
-            make_info_row("乘客", f"{session.get('passengers', '')} 人"),
-            make_info_row("行李", f"{session.get('luggage', '')} 件"),
-            make_info_row("姓名", session.get('name', '')),
-            make_info_row("電話", session.get('phone', '')),
-            make_info_row("信箱", session.get('email', '') or '無'),
-            make_info_row("航班", session.get('flight', '') or '無'),
-            make_info_row("加購項目", '\n'.join(extras) if extras else '無'),
-            make_info_row("備註", session.get('note', '') or '無'),
+            {"type": "text", "text": "是否需要途中加停？", "weight": "bold", "size": "md"},
+            {"type": "text", "text": "系統將依停靠點與出發地距離自動計算加收費用：", "size": "sm", "color": "#718096", "margin": "sm", "wrap": True},
             {"type": "separator", "margin": "md"},
-            {"type": "text", "text": "以上資料是否正確？", "margin": "md", "color": "#E05C00", "weight": "bold"}
+            make_info_row("5 公里以內", "+NT$200"),
+            make_info_row("5–12 公里", "+NT$300"),
+            make_info_row("12–18 公里", "+NT$400"),
+            make_info_row("超過 18 公里", "+NT$500"),
+        ]},
+        "footer": {"type": "box", "layout": "horizontal", "spacing": "sm", "contents": [
+            {"type": "button", "action": {"type": "postback", "label": "不需要，直接報價", "data": "no_extra_stops"},
+             "style": "primary", "color": "#4A9B8F", "flex": 1},
+            {"type": "button", "action": {"type": "postback", "label": "新增停靠點", "data": "add_extra_stop"},
+             "style": "secondary", "flex": 1},
+        ]}
+    }
+    send_flex(reply_token, '多點停靠服務', bubble)
+
+
+def build_quote_from_session(session):
+    """從 session 預先計算報價（訂單未儲存，用假 Order 物件）"""
+    class FakeOrder:
+        pass
+    o = FakeOrder()
+    o.airport        = session.get('airport', '')
+    o.pickup_location= session.get('pickup', '')
+    o.night_fee      = session.get('night_fee', False)
+    o.sign_board     = session.get('sign_board', False)
+    o.child_seat_count = session.get('child_seat_count', 0)
+    o.pet            = session.get('pet', False)
+    o.booking_date   = session.get('date', '')
+    o.extra_stop_fee = session.get('extra_stop_fee', 0)
+    quote = calculate_quote(o)
+    # 加入多點費用
+    if o.extra_stop_fee:
+        quote['surcharges'].append({'label': '多點加收', 'amount': o.extra_stop_fee})
+        quote['breakdown'].append({'label': '多點加收', 'amount': o.extra_stop_fee})
+        quote['total'] += o.extra_stop_fee
+    return quote
+
+
+def send_order_confirm(reply_token, session):
+    extras = []
+    if session.get('night_fee'): extras.append('夜間服務費')
+    if session.get('sign_board'): extras.append('舉牌服務')
+    if session.get('child_seat_count', 0):
+        extras.append(f'兒童安全座椅 x{session["child_seat_count"]}')
+    if session.get('pet'): extras.append('寵物同行')
+    extra_stops = session.get('extra_stops', [])
+
+    # 計算報價
+    quote = build_quote_from_session(session)
+
+    # 報價明細 rows
+    quote_rows = []
+    for item in quote['breakdown']:
+        quote_rows.append(make_info_row(item['label'], f"NT${item['amount']:,}"))
+    if quote['total'] > 0:
+        quote_rows.append({"type": "separator", "margin": "sm"})
+        quote_rows.append({
+            "type": "box", "layout": "horizontal", "margin": "sm",
+            "contents": [
+                {"type": "text", "text": "預估總費用", "weight": "bold", "flex": 3, "size": "sm"},
+                {"type": "text", "text": f"NT${quote['total']:,}", "weight": "bold",
+                 "flex": 5, "color": "#E05C00", "size": "lg", "align": "end"}
+            ]
+        })
+
+    # 行程資料 rows
+    body_rows = [
+        make_info_row("服務類型", session.get('service_name', '')),
+        make_info_row("車型", session.get('vehicle', '')),
+        make_info_row("機場", session.get('airport', '')),
+        make_info_row("出發地", session.get('pickup', '')),
+    ]
+    if extra_stops:
+        for i, stop in enumerate(extra_stops, 1):
+            body_rows.append(make_info_row(f"停靠點 {i}", stop))
+    body_rows += [
+        make_info_row("日期", session.get('date', '')),
+        make_info_row("時間", session.get('time', '')),
+        make_info_row("乘客", f"{session.get('passengers', '')} 人"),
+        make_info_row("行李", f"{session.get('luggage', '')} 件"),
+        make_info_row("姓名", session.get('name', '')),
+        make_info_row("電話", session.get('phone', '')),
+        make_info_row("信箱", session.get('email', '') or '無'),
+        make_info_row("航班", session.get('flight', '') or '無'),
+        make_info_row("加購", '、'.join(extras) if extras else '無'),
+        make_info_row("備註", session.get('note', '') or '無'),
+    ]
+
+    # 兩個 bubble：1. 報價 2. 確認資料
+    quote_bubble = {
+        "type": "bubble",
+        "header": {"type": "box", "layout": "vertical", "backgroundColor": "#1A2B4A",
+            "contents": [
+                {"type": "text", "text": "預估報價明細", "color": "#FFFFFF", "size": "xl", "weight": "bold"},
+                {"type": "text", "text": "實際費用以出發當日為準", "color": "#8BA3C7", "size": "xs"}
+            ]},
+        "body": {"type": "box", "layout": "vertical", "contents":
+            quote_rows if quote_rows else [{"type": "text", "text": "尚未設定此區域報價，將由客服確認", "color": "#A0AEC0", "size": "sm", "wrap": True}]
+        }
+    }
+
+    confirm_bubble = {
+        "type": "bubble",
+        "header": header_box("確認預約資料"),
+        "body": {"type": "box", "layout": "vertical", "contents": body_rows + [
+            {"type": "separator", "margin": "md"},
+            {"type": "text", "text": "確認以上資料無誤後送出預約", "margin": "md", "color": "#E05C00", "weight": "bold", "size": "sm", "wrap": True}
         ]},
         "footer": {"type": "box", "layout": "horizontal", "contents": [
             {"type": "button", "action": {"type": "postback", "label": "確認送出", "data": "confirm_order"},
@@ -902,7 +1313,16 @@ def send_order_confirm(reply_token, session):
              "style": "secondary", "flex": 1}
         ]}
     }
-    send_flex(reply_token, '確認預約資料', bubble)
+
+    carousel = {
+        "type": "carousel",
+        "contents": [quote_bubble, confirm_bubble]
+    }
+    with ApiClient(configuration) as api_client:
+        MessagingApi(api_client).reply_message(
+            ReplyMessageRequest(reply_token=reply_token,
+                messages=[FlexMessage(alt_text='預估報價與確認預約資料', contents=FlexContainer.from_dict(carousel))])
+        )
 
 def save_order(reply_token, session, user_id):
     with app.app_context():
@@ -927,6 +1347,8 @@ def save_order(reply_token, session, user_id):
             child_seat_count=session.get('child_seat_count', 0),
             pet=session.get('pet', False),
             note=session.get('note', ''),
+            extra_stops=json.dumps(session.get('extra_stops', []), ensure_ascii=False),
+            extra_stop_fee=session.get('extra_stop_fee', 0),
             status='待確認'
         )
         db.session.add(order)
@@ -938,6 +1360,11 @@ def save_order(reply_token, session, user_id):
                 auto_dispatch_order(order_id)
             except Exception as e:
                 print(f'Auto dispatch error: {e}')
+        # 推播報價給客人
+        try:
+            send_quote_to_customer(order)
+        except Exception as e:
+            print(f'Quote error: {e}')
 
     bubble = {
         "type": "bubble",

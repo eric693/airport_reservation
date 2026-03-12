@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>報價管理 - 機場接送管理後台</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', sans-serif; background: #F4F6F8; color: #2D3748; }
+  .sidebar { position: fixed; top: 0; left: 0; width: 220px; height: 100vh; background: #1A2B4A; display: flex; flex-direction: column; }
+  .sidebar-header { padding: 24px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+  .sidebar-title { color: #FFFFFF; font-size: 16px; font-weight: 700; }
+  .sidebar-sub { color: #8BA3C7; font-size: 11px; margin-top: 3px; letter-spacing: 1px; }
+  .sidebar-accent { width: 32px; height: 3px; background: #4A9B8F; margin-top: 10px; }
+  .sidebar-nav { padding: 16px 0; flex: 1; }
+  .nav-label { padding: 8px 20px 4px; font-size: 10px; color: #8BA3C7; letter-spacing: 1px; text-transform: uppercase; }
+  .nav-item { display: block; padding: 10px 20px; color: #B8C8DC; font-size: 14px; text-decoration: none; transition: all 0.2s; }
+  .nav-item:hover, .nav-item.active { background: rgba(74,155,143,0.15); color: #FFFFFF; border-left: 3px solid #4A9B8F; }
+  .sidebar-footer { padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1); color: #8BA3C7; font-size: 12px; }
+  .main { margin-left: 220px; padding: 32px; min-height: 100vh; }
+  .page-header { margin-bottom: 28px; }
+  .page-title { font-size: 24px; font-weight: 700; color: #1A2B4A; }
+  .page-sub { color: #718096; font-size: 14px; margin-top: 4px; }
+  .section-title { font-size: 18px; font-weight: 700; color: #1A2B4A; margin: 32px 0 16px; display: flex; align-items: center; justify-content: space-between; }
+  .card { background: #FFFFFF; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); overflow: hidden; margin-bottom: 24px; }
+  .card-header { padding: 16px 24px; border-bottom: 1px solid #EDF2F7; display: flex; align-items: center; justify-content: space-between; }
+  .card-title { font-size: 15px; font-weight: 600; color: #1A2B4A; }
+  .card-body { padding: 24px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group.full { grid-column: 1 / -1; }
+  label { font-size: 11px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }
+  input, select, textarea { padding: 8px 12px; border: 1px solid #E2E8F0; border-radius: 6px; font-size: 14px; color: #2D3748; outline: none; font-family: inherit; width: 100%; }
+  input:focus, select:focus { border-color: #4A9B8F; }
+  .hint { font-size: 11px; color: #A0AEC0; margin-top: 3px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { padding: 11px 16px; text-align: left; font-size: 11px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; background: #F7FAFC; border-bottom: 1px solid #EDF2F7; }
+  td { padding: 13px 16px; font-size: 13px; color: #2D3748; border-bottom: 1px solid #EDF2F7; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #F7FAFC; }
+  .badge-on { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; background: #E6F5F3; color: #2C7A73; }
+  .badge-off { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; background: #EDF2F7; color: #A0AEC0; }
+  .price-tag { font-size: 16px; font-weight: 700; color: #E05C00; }
+  .btn { display: inline-block; padding: 7px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; text-decoration: none; cursor: pointer; border: none; transition: all 0.2s; }
+  .btn-primary { background: #4A9B8F; color: #FFFFFF; }
+  .btn-primary:hover { background: #3A8070; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn-outline { background: transparent; color: #4A9B8F; border: 1px solid #4A9B8F; }
+  .btn-outline:hover { background: #4A9B8F; color: #FFFFFF; }
+  .btn-danger { background: transparent; color: #CC3333; border: 1px solid #CC3333; }
+  .btn-danger:hover { background: #CC3333; color: #FFFFFF; }
+  .flash-messages { margin-bottom: 20px; }
+  .flash { padding: 12px 16px; border-radius: 8px; background: #E6F5F3; color: #2C7A73; font-size: 14px; }
+  .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+  .modal-overlay.show { display: flex; }
+  .modal-box { background: #FFFFFF; border-radius: 12px; padding: 28px; max-width: 520px; width: 90%; max-height: 90vh; overflow-y: auto; }
+  .modal-title { font-size: 17px; font-weight: 700; color: #1A2B4A; margin-bottom: 18px; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+  .inline-form { display: inline; }
+  .surcharge-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 120px; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid #EDF2F7; }
+  .surcharge-row:last-child { border-bottom: none; }
+  .note-text { font-size: 11px; color: #A0AEC0; }
+</style>
+</head>
+<body>
+<div class="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-title">機場接送管理</div>
+    <div class="sidebar-sub">AIRPORT TRANSFER SYSTEM</div>
+    <div class="sidebar-accent"></div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">功能選單</div>
+    <a href="/admin" class="nav-item">訂單管理</a>
+    <a href="/admin/drivers" class="nav-item">司機管理</a>
+    <a href="/admin/vehicles" class="nav-item">車型管理</a>
+    <a href="/admin/airports" class="nav-item">機場管理</a>
+    <a href="/admin/dispatch" class="nav-item">搶單管理</a>
+    <a href="/admin/pricing" class="nav-item active">報價管理</a>
+  </nav>
+  <div class="sidebar-footer">管理員後台 v1.0</div>
+</div>
+
+<main class="main">
+  <div class="page-header">
+    <div class="page-title">報價管理</div>
+    <div class="page-sub">客人預約成功後，系統自動依規則計算並推播報價給客人</div>
+  </div>
+
+  {% with messages = get_flashed_messages() %}
+  {% if messages %}
+  <div class="flash-messages">{% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}</div>
+  {% endif %}
+  {% endwith %}
+
+  <!-- 區域基本報價 -->
+  <div class="section-title">
+    區域基本報價
+    <button class="btn btn-primary btn-sm" onclick="document.getElementById('addRuleModal').classList.add('show')">新增區域</button>
+  </div>
+  <div class="card">
+    <div style="padding:12px 20px;background:#FEF0E7;font-size:12px;color:#E05C00;border-bottom:1px solid #EDF2F7">
+      比對方式：機場關鍵字 AND 地區關鍵字都符合時套用。地區關鍵字可用逗號分隔多個，例如：台中,台中市。排序越小越優先。
+    </div>
+    {% if rules %}
+    <table>
+      <thead>
+        <tr>
+          <th>排序</th>
+          <th>規則名稱</th>
+          <th>機場關鍵字</th>
+          <th>地區關鍵字</th>
+          <th>基本價</th>
+          <th>備註</th>
+          <th>狀態</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rules %}
+        <tr>
+          <td>{{ r.sort_order }}</td>
+          <td><strong>{{ r.name }}</strong></td>
+          <td>{{ r.airport_keyword or '（全部）' }}</td>
+          <td>{{ r.region_keyword or '（全部）' }}</td>
+          <td><span class="price-tag">NT${{ r.base_price:, }}</span></td>
+          <td class="note-text">{{ r.note or '—' }}</td>
+          <td><span class="{{ 'badge-on' if r.active else 'badge-off' }}">{{ '啟用' if r.active else '停用' }}</span></td>
+          <td>
+            <button class="btn btn-outline btn-sm rule-edit-btn"
+              data-id="{{ r.id }}" data-name="{{ r.name|e }}"
+              data-airport="{{ r.airport_keyword|e }}" data-region="{{ r.region_keyword|e }}"
+              data-price="{{ r.base_price }}" data-note="{{ r.note|e }}"
+              data-sort="{{ r.sort_order }}" data-active="{{ '1' if r.active else '0' }}">編輯</button>
+            <form method="POST" action="/admin/pricing/rules/{{ r.id }}/delete" class="inline-form"
+              onsubmit="return confirm('確定刪除此規則？')">
+              <button type="submit" class="btn btn-danger btn-sm">刪除</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="text-align:center;color:#A0AEC0;padding:40px">尚未設定區域報價規則</div>
+    {% endif %}
+  </div>
+
+  <!-- 附加費用 -->
+  <div class="section-title">附加費用設定</div>
+  <div class="card">
+    <div class="card-body">
+      {% for s in surcharges %}
+      <form method="POST" action="/admin/pricing/surcharges/{{ s.id }}/edit">
+        <div class="surcharge-row">
+          <div>
+            <div style="font-size:14px;font-weight:500">{{ s.name }}</div>
+            {% if s.note %}<div class="note-text">{{ s.note }}</div>{% endif %}
+          </div>
+          <div>
+            <label>金額（NT$）</label>
+            <input type="number" name="amount" value="{{ s.amount }}" min="0" style="width:100px">
+          </div>
+          <div>
+            <label>狀態</label>
+            <select name="enabled" style="width:80px">
+              <option value="1" {{ 'selected' if s.enabled }}>啟用</option>
+              <option value="0" {{ 'selected' if not s.enabled }}>停用</option>
+            </select>
+          </div>
+          <div>
+            <label>備註</label>
+            <input type="text" name="note" value="{{ s.note }}" placeholder="備註">
+          </div>
+          <div style="padding-top:18px">
+            <button type="submit" class="btn btn-primary btn-sm">儲存</button>
+          </div>
+        </div>
+      </form>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 假日加收 -->
+  <div class="section-title">
+    假日 / 旺季加收日期
+    <button class="btn btn-primary btn-sm" onclick="document.getElementById('addHolidayModal').classList.add('show')">新增日期</button>
+  </div>
+  <div class="card">
+    <div style="padding:12px 20px;background:#F7FAFC;font-size:12px;color:#718096;border-bottom:1px solid #EDF2F7">
+      日期格式：MM-DD（每年重複）或 YYYY-MM-DD（指定年份）
+    </div>
+    {% if holidays %}
+    <table>
+      <thead>
+        <tr>
+          <th>名稱</th>
+          <th>開始日期</th>
+          <th>結束日期</th>
+          <th>加收金額</th>
+          <th>狀態</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in holidays %}
+        <tr>
+          <td><strong>{{ h.name or '—' }}</strong></td>
+          <td>{{ h.date_from }}</td>
+          <td>{{ h.date_to }}</td>
+          <td><span class="price-tag">+NT${{ h.amount }}</span></td>
+          <td><span class="{{ 'badge-on' if h.active else 'badge-off' }}">{{ '啟用' if h.active else '停用' }}</span></td>
+          <td>
+            <button class="btn btn-outline btn-sm holiday-edit-btn"
+              data-id="{{ h.id }}" data-name="{{ h.name|e }}"
+              data-from="{{ h.date_from }}" data-to="{{ h.date_to }}"
+              data-amount="{{ h.amount }}" data-active="{{ '1' if h.active else '0' }}">編輯</button>
+            <form method="POST" action="/admin/pricing/holidays/{{ h.id }}/delete" class="inline-form"
+              onsubmit="return confirm('確定刪除？')">
+              <button type="submit" class="btn btn-danger btn-sm">刪除</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="text-align:center;color:#A0AEC0;padding:40px">尚未設定假日加收</div>
+    {% endif %}
+  </div>
+</main>
+
+<!-- 新增區域規則 Modal -->
+<div class="modal-overlay" id="addRuleModal">
+  <div class="modal-box">
+    <div class="modal-title">新增區域報價規則</div>
+    <form method="POST" action="/admin/pricing/rules/add">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>規則名稱</label>
+          <input type="text" name="name" required placeholder="例：台中-桃園機場">
+        </div>
+        <div class="form-group">
+          <label>機場關鍵字</label>
+          <input type="text" name="airport_keyword" placeholder="例：桃園">
+          <div class="hint">留空 = 符合所有機場</div>
+        </div>
+        <div class="form-group">
+          <label>地區關鍵字</label>
+          <input type="text" name="region_keyword" placeholder="例：台中,台中市">
+          <div class="hint">多個關鍵字用逗號分隔，留空 = 全部符合</div>
+        </div>
+        <div class="form-group">
+          <label>基本價（NT$）</label>
+          <input type="number" name="base_price" value="0" min="0" required>
+        </div>
+        <div class="form-group">
+          <label>排序（數字越小越優先）</label>
+          <input type="number" name="sort_order" value="99" min="0">
+        </div>
+        <div class="form-group full">
+          <label>備註</label>
+          <input type="text" name="note" placeholder="例：不指定車款，最多七人七件行李">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('addRuleModal').classList.remove('show')">取消</button>
+        <button type="submit" class="btn btn-primary">新增</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 編輯區域規則 Modal -->
+<div class="modal-overlay" id="editRuleModal">
+  <div class="modal-box">
+    <div class="modal-title">編輯區域報價規則</div>
+    <form method="POST" id="editRuleForm">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>規則名稱</label>
+          <input type="text" name="name" id="er_name" required>
+        </div>
+        <div class="form-group">
+          <label>機場關鍵字</label>
+          <input type="text" name="airport_keyword" id="er_airport">
+        </div>
+        <div class="form-group">
+          <label>地區關鍵字</label>
+          <input type="text" name="region_keyword" id="er_region">
+        </div>
+        <div class="form-group">
+          <label>基本價（NT$）</label>
+          <input type="number" name="base_price" id="er_price" min="0">
+        </div>
+        <div class="form-group">
+          <label>排序</label>
+          <input type="number" name="sort_order" id="er_sort" min="0">
+        </div>
+        <div class="form-group">
+          <label>狀態</label>
+          <select name="active" id="er_active">
+            <option value="1">啟用</option>
+            <option value="0">停用</option>
+          </select>
+        </div>
+        <div class="form-group full">
+          <label>備註</label>
+          <input type="text" name="note" id="er_note">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('editRuleModal').classList.remove('show')">取消</button>
+        <button type="submit" class="btn btn-primary">儲存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 新增假日 Modal -->
+<div class="modal-overlay" id="addHolidayModal">
+  <div class="modal-box">
+    <div class="modal-title">新增假日加收</div>
+    <form method="POST" action="/admin/pricing/holidays/add">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>名稱</label>
+          <input type="text" name="name" placeholder="例：清明連假">
+        </div>
+        <div class="form-group">
+          <label>開始日期</label>
+          <input type="text" name="date_from" required placeholder="MM-DD 或 YYYY-MM-DD">
+        </div>
+        <div class="form-group">
+          <label>結束日期</label>
+          <input type="text" name="date_to" required placeholder="MM-DD 或 YYYY-MM-DD">
+        </div>
+        <div class="form-group">
+          <label>加收金額（NT$）</label>
+          <input type="number" name="amount" value="300" min="0">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('addHolidayModal').classList.remove('show')">取消</button>
+        <button type="submit" class="btn btn-primary">新增</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 編輯假日 Modal -->
+<div class="modal-overlay" id="editHolidayModal">
+  <div class="modal-box">
+    <div class="modal-title">編輯假日加收</div>
+    <form method="POST" id="editHolidayForm">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>名稱</label>
+          <input type="text" name="name" id="eh_name">
+        </div>
+        <div class="form-group">
+          <label>開始日期</label>
+          <input type="text" name="date_from" id="eh_from">
+        </div>
+        <div class="form-group">
+          <label>結束日期</label>
+          <input type="text" name="date_to" id="eh_to">
+        </div>
+        <div class="form-group">
+          <label>加收金額</label>
+          <input type="number" name="amount" id="eh_amount" min="0">
+        </div>
+        <div class="form-group">
+          <label>狀態</label>
+          <select name="active" id="eh_active">
+            <option value="1">啟用</option>
+            <option value="0">停用</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('editHolidayModal').classList.remove('show')">取消</button>
+        <button type="submit" class="btn btn-primary">儲存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.rule-edit-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var d = this.dataset;
+    document.getElementById('editRuleForm').action = '/admin/pricing/rules/' + d.id + '/edit';
+    document.getElementById('er_name').value = d.name;
+    document.getElementById('er_airport').value = d.airport;
+    document.getElementById('er_region').value = d.region;
+    document.getElementById('er_price').value = d.price;
+    document.getElementById('er_note').value = d.note;
+    document.getElementById('er_sort').value = d.sort;
+    document.getElementById('er_active').value = d.active;
+    document.getElementById('editRuleModal').classList.add('show');
+  });
+});
+document.querySelectorAll('.holiday-edit-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var d = this.dataset;
+    document.getElementById('editHolidayForm').action = '/admin/pricing/holidays/' + d.id + '/edit';
+    document.getElementById('eh_name').value = d.name;
+    document.getElementById('eh_from').value = d.from;
+    document.getElementById('eh_to').value = d.to;
+    document.getElementById('eh_amount').value = d.amount;
+    document.getElementById('eh_active').value = d.active;
+    document.getElementById('editHolidayModal').classList.add('show');
+  });
+});
+</script>
+</body>
+</html>

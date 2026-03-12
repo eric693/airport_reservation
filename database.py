@@ -28,6 +28,8 @@ class Order(db.Model):
     child_seat_count = db.Column(db.Integer, default=0)
     pet = db.Column(db.Boolean, default=False)
     note = db.Column(db.Text, default='')
+    extra_stops = db.Column(db.Text, default='')      # 多點地址，JSON 陣列字串
+    extra_stop_fee = db.Column(db.Integer, default=0)  # 多點加收費用
     status = db.Column(db.String(20), default='待確認')
 
     # 司機指派
@@ -118,3 +120,43 @@ class DispatchResponse(db.Model):
 
     job = db.relationship('DispatchJob', backref='responses')
     driver = db.relationship('Driver')
+
+
+class PriceRule(db.Model):
+    """區域基本報價規則"""
+    __tablename__ = 'price_rules'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)       # 規則名稱，例如：台中-桃園機場
+    airport_keyword = db.Column(db.String(50), default='') # 機場關鍵字，例如：桃園
+    region_keyword = db.Column(db.String(100), default='') # 地區關鍵字（接送地點），例如：台中
+    base_price = db.Column(db.Integer, default=0)          # 基本價格（送機/接機同價）
+    note = db.Column(db.Text, default='')                  # 備註說明
+    active = db.Column(db.Boolean, default=True)
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class PriceSurcharge(db.Model):
+    """附加費用設定（全域）"""
+    __tablename__ = 'price_surcharges'
+
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(50), unique=True, nullable=False)  # 識別碼
+    name = db.Column(db.String(50), nullable=False)              # 顯示名稱
+    amount = db.Column(db.Integer, default=0)                    # 金額
+    enabled = db.Column(db.Boolean, default=True)
+    note = db.Column(db.String(100), default='')
+
+
+class HolidaySurcharge(db.Model):
+    """假日/旺季加價日期區間"""
+    __tablename__ = 'holiday_surcharges'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), default='')   # 名稱，例如：清明連假
+    date_from = db.Column(db.String(10), nullable=False)  # YYYY-MM-DD 或 MM-DD
+    date_to = db.Column(db.String(10), nullable=False)
+    amount = db.Column(db.Integer, default=300)
+    active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
