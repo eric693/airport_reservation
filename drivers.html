@@ -121,8 +121,17 @@
           <td><span class="{{ 'badge-active' if driver.active else 'badge-inactive' }}">{{ '啟用' if driver.active else '停用' }}</span></td>
           <td class="sub-text">{{ driver.note or '—' }}</td>
           <td>
-            <button class="btn btn-outline" onclick="openEdit({{ driver.id }}, '{{ driver.name }}', '{{ driver.phone }}', '{{ driver.car_brand }}', '{{ driver.car_plate }}', '{{ driver.car_color }}', '{{ driver.note }}', {{ 'true' if driver.active else 'false' }})">編輯</button>
-            <form method="POST" action="/admin/drivers/{{ driver.id }}/delete" style="display:inline;" onsubmit="return confirm('確定刪除司機 {{ driver.name }}？')">
+            <button class="btn btn-outline edit-btn"
+              data-id="{{ driver.id }}"
+              data-name="{{ driver.name | e }}"
+              data-phone="{{ driver.phone | e }}"
+              data-car_brand="{{ driver.car_brand | e }}"
+              data-car_plate="{{ driver.car_plate | e }}"
+              data-car_color="{{ driver.car_color | e }}"
+              data-note="{{ driver.note | e }}"
+              data-active="{{ '1' if driver.active else '0' }}">編輯</button>
+            <form method="POST" action="/admin/drivers/{{ driver.id }}/delete" style="display:inline;"
+              onsubmit="return confirm('確定刪除司機？')">
               <button type="submit" class="btn btn-danger">刪除</button>
             </form>
           </td>
@@ -222,17 +231,20 @@
 </div>
 
 <script>
-function openEdit(id, name, phone, car_brand, car_plate, car_color, note, active) {
-  document.getElementById('editForm').action = `/admin/drivers/${id}/edit`;
-  document.getElementById('edit_name').value = name;
-  document.getElementById('edit_phone').value = phone;
-  document.getElementById('edit_car_brand').value = car_brand;
-  document.getElementById('edit_car_plate').value = car_plate;
-  document.getElementById('edit_car_color').value = car_color;
-  document.getElementById('edit_note').value = note;
-  document.getElementById('edit_active').value = active ? '1' : '0';
-  document.getElementById('editModal').classList.add('show');
-}
+document.querySelectorAll('.edit-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var d = this.dataset;
+    document.getElementById('editForm').action = '/admin/drivers/' + d.id + '/edit';
+    document.getElementById('edit_name').value = d.name;
+    document.getElementById('edit_phone').value = d.phone;
+    document.getElementById('edit_car_brand').value = d.car_brand;
+    document.getElementById('edit_car_plate').value = d.car_plate;
+    document.getElementById('edit_car_color').value = d.car_color;
+    document.getElementById('edit_note').value = d.note;
+    document.getElementById('edit_active').value = d.active;
+    document.getElementById('editModal').classList.add('show');
+  });
+});
 </script>
 </body>
 </html>
