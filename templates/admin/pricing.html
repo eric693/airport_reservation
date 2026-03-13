@@ -124,6 +124,46 @@
     </div>
   </div>
 
+  <!-- ezPay 電子發票設定 -->
+  <div class="section-title">ezPay 電子發票設定</div>
+  <div class="card">
+    <div class="card-body">
+      <div style="display:flex;align-items:flex-start;gap:24px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:14px;font-weight:500;margin-bottom:4px">目前模式</div>
+          <span class="{{ 'badge-on' if ezpay_mode == 'prod' else 'badge-off' }}" style="font-size:13px;padding:4px 14px">
+            {{ '正式環境' if ezpay_mode == 'prod' else '測試環境' }}
+          </span>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#A0AEC0;margin-bottom:6px">切換發票環境</div>
+          <form method="POST" action="/admin/pricing/ezpay_mode" style="display:flex;gap:8px">
+            <select name="mode" style="padding:6px 10px;border-radius:6px;border:1px solid #E2E8F0;font-size:13px">
+              <option value="test" {{ 'selected' if ezpay_mode == 'test' }}>測試環境</option>
+              <option value="prod" {{ 'selected' if ezpay_mode == 'prod' }}>正式環境</option>
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">切換</button>
+          </form>
+        </div>
+        <div style="font-size:12px;color:#A0AEC0;line-height:2">
+          <div>商店代號：<strong style="color:#2D3748">{{ ezpay_merchant_id }}</strong></div>
+          <div>API 金鑰：
+            {% if ezpay_key_set %}
+              <span style="color:#38A169;font-weight:600">已設定 ✓</span>
+            {% else %}
+              <span style="color:#E53E3E;font-weight:600">未設定 — 請在 Render 環境變數填入 EZPAY_HASH_KEY / EZPAY_HASH_IV</span>
+            {% endif %}
+          </div>
+          <div style="margin-top:6px;padding:8px 12px;background:#F7FAFC;border-radius:6px;font-size:11px;color:#718096">
+            請至 <a href="https://inv.ezpay.com.tw" target="_blank" style="color:#4A9B8F">inv.ezpay.com.tw</a>
+            後台取得 HashKey / HashIV，填入 Render 環境變數：<br>
+            <code>EZPAY_MERCHANT_ID</code>、<code>EZPAY_HASH_KEY</code>、<code>EZPAY_HASH_IV</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 區域基本報價 -->
   <div class="section-title">
     區域基本報價

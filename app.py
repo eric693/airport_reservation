@@ -134,6 +134,12 @@ NEWEBPAY_HASH_IV      = os.environ.get('NEWEBPAY_HASH_IV', '')
 NEWEBPAY_MODE         = os.environ.get('NEWEBPAY_MODE', 'test')       # test or prod
 NEWEBPAY_DEPOSIT      = 315
 
+# ── ezPay 電子發票設定 ──────────────────────────────────────────────
+EZPAY_MERCHANT_ID = os.environ.get('EZPAY_MERCHANT_ID', '338919792')
+EZPAY_HASH_KEY    = os.environ.get('EZPAY_HASH_KEY', '')
+EZPAY_HASH_IV     = os.environ.get('EZPAY_HASH_IV', '')
+EZPAY_MODE        = os.environ.get('EZPAY_MODE', 'test')  # 'test' or 'prod'
+
 # ── ezPay 電子發票設定 ────────────────────────────────────────────────
 EZPAY_MERCHANT_ID     = os.environ.get('EZPAY_MERCHANT_ID', '338919792')
 EZPAY_HASH_KEY        = os.environ.get('EZPAY_HASH_KEY', 'uXbTWrmBjLArC0Ln93CZEqC20eY5jBE0')
@@ -1149,8 +1155,14 @@ def admin_pricing():
     surcharges = PriceSurcharge.query.all()
     holidays = HolidaySurcharge.query.order_by(HolidaySurcharge.date_from).all()
     newebpay_mode = os.environ.get('NEWEBPAY_MODE', 'test')
+    ezpay_mode    = os.environ.get('EZPAY_MODE', 'test')
+    ezpay_merchant_id = os.environ.get('EZPAY_MERCHANT_ID', '338919792')
+    ezpay_key_set = bool(os.environ.get('EZPAY_HASH_KEY', ''))
     return render_template('admin/pricing.html', rules=rules, surcharges=surcharges, holidays=holidays,
-                           newebpay_mode=newebpay_mode)
+                           newebpay_mode=newebpay_mode,
+                           ezpay_mode=ezpay_mode,
+                           ezpay_merchant_id=ezpay_merchant_id,
+                           ezpay_key_set=ezpay_key_set)
 
 
 @app.route('/admin/pricing/newebpay_mode', methods=['POST'])
@@ -1162,6 +1174,17 @@ def admin_set_newebpay_mode():
         global NEWEBPAY_MODE
         NEWEBPAY_MODE = mode
         flash(f'藍新金流已切換為：{"正式環境" if mode=="prod" else "測試環境"}')
+    return redirect(url_for('admin_pricing'))
+
+@app.route('/admin/pricing/ezpay_mode', methods=['POST'])
+@admin_required
+def admin_set_ezpay_mode():
+    mode = request.form.get('mode', 'test')
+    if mode in ('test', 'prod'):
+        os.environ['EZPAY_MODE'] = mode
+        global EZPAY_MODE
+        EZPAY_MODE = mode
+        flash(f'ezPay 電子發票已切換為：{"正式環境" if mode=="prod" else "測試環境"}')
     return redirect(url_for('admin_pricing'))
 
 @app.route('/admin/pricing/rules/add', methods=['POST'])
