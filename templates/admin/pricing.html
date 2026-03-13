@@ -93,6 +93,37 @@
   {% endif %}
   {% endwith %}
 
+
+  <!-- 藍新金流設定 -->
+  <div class="section-title">藍新金流設定</div>
+  <div class="card">
+    <div class="card-body">
+      <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:14px;font-weight:500;margin-bottom:4px">目前模式</div>
+          <span class="{{ 'badge-on' if newebpay_mode == 'prod' else 'badge-off' }}" style="font-size:13px;padding:4px 14px">
+            {{ '🟢 正式環境' if newebpay_mode == 'prod' else '🧪 測試環境' }}
+          </span>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#A0AEC0;margin-bottom:6px">固定定金金額：<strong style="color:#E05C00">NT$300</strong></div>
+          <form method="POST" action="/admin/pricing/newebpay_mode" style="display:flex;gap:8px">
+            <select name="mode" style="padding:6px 10px;border-radius:6px;border:1px solid #E2E8F0;font-size:13px">
+              <option value="test" {{ 'selected' if newebpay_mode == 'test' }}>測試環境（ccore）</option>
+              <option value="prod" {{ 'selected' if newebpay_mode == 'prod' }}>正式環境（core）</option>
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">切換</button>
+          </form>
+        </div>
+        <div style="font-size:12px;color:#A0AEC0;line-height:1.8">
+          <div>MerchantID：{{ 'NEWEBPAY_MERCHANT_ID 環境變數' }}</div>
+          <div>付款完成通知：/newebpay/notify</div>
+          <div>付款成功返回：/newebpay/return</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 區域基本報價 -->
   <div class="section-title">
     區域基本報價

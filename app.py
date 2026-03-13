@@ -4,6 +4,11 @@ import base64
 import threading
 import time
 import requests
+import hashlib
+import hmac
+import urllib.parse
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad, unpad
 from datetime import datetime, timedelta
 from sqlalchemy.pool import NullPool
 from flask import Flask, request, abort, render_template, redirect, url_for, flash, jsonify, session as flask_session
@@ -43,6 +48,7 @@ with app.app_context():
     _migrations = [
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS extra_stops TEXT DEFAULT ''",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS extra_stop_fee INTEGER DEFAULT 0",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS deposit_paid BOOLEAN DEFAULT FALSE",
         "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS line_user_id VARCHAR(100) DEFAULT ''",
         "ALTER TABLE dispatch_jobs ADD COLUMN IF NOT EXISTS deadline TIMESTAMP",
         "ALTER TABLE dispatch_jobs ADD COLUMN IF NOT EXISTS note VARCHAR(200) DEFAULT ''",
@@ -124,6 +130,76 @@ ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin1234')
 ADMIN_LINE_USER_ID = os.environ.get('ADMIN_LINE_USER_ID', '')  # 後台管理員的 LINE User ID（搶單成功時收通知）
 AUTO_DISPATCH = os.environ.get('AUTO_DISPATCH', '0') == '1'   # 設為 1 時，客人送出預約後自動發布搶單
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')  # Google Maps API Key（用於多點距離計算）
+
+# ── 藍新金流設定 ─────────────────────────────────────────────────────
+NEWEBPAY_MERCHANT_ID  = os.environ.get('NEWEBPAY_MERCHANT_ID', '')
+NEWEBPAY_HASH_KEY     = os.environ.get('NEWEBPAY_HASH_KEY', '')
+NEWEBPAY_HASH_IV      = os.environ.get('NEWEBPAY_HASH_IV', '')
+NEWEBPAY_MODE         = os.environ.get('NEWEBPAY_MODE', 'test')  # 'test' or 'prod'
+NEWEBPAY_DEPOSIT      = 315  # 固定定金金額（含稅）
+
+def newebpay_api_url():
+    if NEWEBPAY_MODE == 'prod':
+        return 'https://core.newebpay.com/MPG/mpg_gateway'
+    return 'https://ccore.newebpay.com/MPG/mpg_gateway'
+
+def newebpay_encrypt(trade_info: str) -> str:
+    """AES-256-CBC 加密 TradeInfo"""
+    key = NEWEBPAY_HASH_KEY.encode('utf-8')
+    iv  = NEWEBPAY_HASH_IV.encode('utf-8')
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    encrypted = cipher.encrypt(pad(trade_info.encode('utf-8'), AES.block_size))
+    return encrypted.hex()
+
+def newebpay_sha256(trade_info_enc: str) -> str:
+    """SHA256 產生 TradeSha"""
+    raw = f'HashKey={NEWEBPAY_HASH_KEY}&{trade_info_enc}&HashIV={NEWEBPAY_HASH_IV}'
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest().upper()
+
+def newebpay_decrypt(trade_info_enc: str) -> dict:
+    """AES 解密藍新回傳的 TradeInfo"""
+    try:
+        key = NEWEBPAY_HASH_KEY.encode('utf-8')
+        iv  = NEWEBPAY_HASH_IV.encode('utf-8')
+        cipher = AES.new(key, AES.MODE_CBC, iv)
+        decrypted = unpad(cipher.decrypt(bytes.fromhex(trade_info_enc)), AES.block_size)
+        return dict(urllib.parse.parse_qsl(decrypted.decode('utf-8')))
+    except Exception as e:
+        app.logger.error(f'Newebpay decrypt error: {e}')
+        return {}
+
+def build_newebpay_form(order_id: int, line_user_id: str, amt: int = NEWEBPAY_DEPOSIT) -> str:
+    """產生藍新付款表單 HTML（由 /pay/<order_id> 路由回傳）"""
+    base_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://airport-reservation.onrender.com')
+    trade_info = urllib.parse.urlencode({
+        'MerchantID':     NEWEBPAY_MERCHANT_ID,
+        'RespondType':    'JSON',
+        'TimeStamp':      int(datetime.now().timestamp()),
+        'Version':        '2.0',
+        'MerchantOrderNo': f'DEP{order_id}',
+        'Amt':            amt,
+        'ItemDesc':       f'機場接送定金（含稅）訂單#{order_id}',
+        'Email':          '',
+        'LoginType':      0,
+        'CREDIT':         1,
+        'ReturnURL':      f'{base_url}/newebpay/return',
+        'NotifyURL':      f'{base_url}/newebpay/notify',
+        'CustomerURL':    f'{base_url}/newebpay/return',
+        'ClientBackURL':  f'{base_url}/newebpay/cancel',
+    })
+    trade_info_enc = newebpay_encrypt(trade_info)
+    trade_sha      = newebpay_sha256(trade_info_enc)
+    api_url        = newebpay_api_url()
+    html = f"""<!DOCTYPE html><html><body onload="document.forms[0].submit()">
+<form method="POST" action="{api_url}">
+  <input type="hidden" name="MerchantID"  value="{NEWEBPAY_MERCHANT_ID}">
+  <input type="hidden" name="TradeInfo"   value="{trade_info_enc}">
+  <input type="hidden" name="TradeSha"    value="{trade_sha}">
+  <input type="hidden" name="Version"     value="2.0">
+</form>
+<p>正在前往付款頁面...</p>
+</body></html>"""
+    return html
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')             # OpenAI API Key（用於 AI 客服對話）
 
 user_sessions = {}
@@ -861,6 +937,122 @@ def send_quote_to_customer(order):
     _send_quote_bubble(order, quote)
 
 
+# ── 藍新金流路由 ─────────────────────────────────────────────────────
+
+@app.route('/pay/<int:order_id>')
+def pay_deposit(order_id):
+    """導向藍新付款頁面"""
+    order = Order.query.get_or_404(order_id)
+    if order.status != '待付款':
+        return '<h2>此訂單已完成付款或不需付款</h2>', 400
+    if not NEWEBPAY_MERCHANT_ID:
+        return '<h2>金流尚未設定，請聯繫客服</h2>', 500
+    return build_newebpay_form(order_id, order.line_user_id)
+
+
+@app.route('/newebpay/notify', methods=['POST'])
+def newebpay_notify():
+    """藍新付款結果通知（Server to Server，背景通知）"""
+    status   = request.form.get('Status')
+    trade_info_enc = request.form.get('TradeInfo', '')
+    trade_sha      = request.form.get('TradeSha', '')
+
+    # 驗證 TradeSha
+    expected = newebpay_sha256(trade_info_enc)
+    if trade_sha.upper() != expected.upper():
+        app.logger.warning('Newebpay TradeSha mismatch')
+        return 'FAIL', 400
+
+    if status != 'SUCCESS':
+        app.logger.info(f'Newebpay payment failed: {status}')
+        return 'OK'
+
+    data = newebpay_decrypt(trade_info_enc)
+    merchant_order_no = data.get('MerchantOrderNo', '')
+    if not merchant_order_no.startswith('DEP'):
+        return 'OK'
+
+    order_id = int(merchant_order_no[3:])
+    order = Order.query.get(order_id)
+    if not order:
+        return 'OK'
+
+    # 更新訂單狀態
+    order.status = '待確認'
+    db.session.commit()
+
+    # 推播付款成功通知給客人
+    notice_text = (
+        "✅ 定金支付成功！\n\n"
+        f"訂單編號：#{order.id}\n"
+        "我們將盡快與您確認訂單，感謝您的預約！\n\n"
+        "📋 預約須知與注意事項\n"
+        "━━━━━━━━━━━━━━━━\n\n"
+        "✈️【接機說明】\n"
+        "• 接機以航班實際落地時間為準，等待 90 分鐘。\n"
+        "• 取好行李後請主動聯繫司機，司機將告知見面地點與車牌。\n"
+        "• 若等候超過 90 分鐘未能聯繫，預約將自動取消並離開現場。\n\n"
+        "📦【行李說明】\n"
+        "• 超過 28 吋或大型行李箱、胖胖箱等非標準行李，請事先告知。\n"
+        "• 若到場後人數及行李與預約不符，司機有權拒絕載送，並不退費。\n\n"
+        "🔄【異動與取消】\n"
+        "• 任何異動（包含行李件數）請於七天前告知。\n"
+        "• 七天內任何理由均無法異動或取消，定金恕不退還。\n\n"
+        "🛡️【保險】\n"
+        "• 所有車輛均投保乘客險 500 萬元以上／每人。\n\n"
+        "如有任何問題，請隨時聯繫客服，感謝您的配合！🙏"
+    )
+    try:
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).push_message(
+                PushMessageRequest(
+                    to=order.line_user_id,
+                    messages=[TextMessage(text=notice_text)]
+                )
+            )
+        send_quote_to_customer(order)
+    except Exception as e:
+        app.logger.error(f'Post-payment push error: {e}')
+
+    # 自動搶單
+    if AUTO_DISPATCH:
+        try:
+            auto_dispatch_order(order.id)
+        except Exception as e:
+            app.logger.error(f'Auto dispatch error: {e}')
+
+    return 'OK'
+
+
+@app.route('/newebpay/return', methods=['POST', 'GET'])
+def newebpay_return():
+    """付款完成後導回的頁面（客人瀏覽器）"""
+    status = request.form.get('Status', request.args.get('Status', ''))
+    if status == 'SUCCESS':
+        return """<html><head><meta charset="utf-8">
+        <style>body{font-family:sans-serif;text-align:center;padding:60px;background:#f4f6f8}
+        .box{background:#fff;border-radius:12px;padding:40px;max-width:400px;margin:0 auto;box-shadow:0 2px 8px rgba(0,0,0,0.1)}
+        h2{color:#4A9B8F} p{color:#555}</style></head>
+        <body><div class="box"><h2>✅ 定金支付成功！</h2>
+        <p>感謝您的預約，我們將盡快與您確認訂單。</p>
+        <p style="color:#999;font-size:13px">您可以關閉此頁面，回到 LINE 查看訂單資訊。</p>
+        </div></body></html>"""
+    else:
+        return """<html><head><meta charset="utf-8">
+        <style>body{font-family:sans-serif;text-align:center;padding:60px;background:#f4f6f8}
+        .box{background:#fff;border-radius:12px;padding:40px;max-width:400px;margin:0 auto;box-shadow:0 2px 8px rgba(0,0,0,0.1)}
+        h2{color:#cc3333} p{color:#555}</style></head>
+        <body><div class="box"><h2>❌ 付款未完成</h2>
+        <p>您的付款尚未完成或已取消，請回到 LINE 重新點擊付款連結。</p>
+        </div></body></html>"""
+
+
+@app.route('/newebpay/cancel', methods=['POST', 'GET'])
+def newebpay_cancel():
+    """付款取消"""
+    return redirect('/newebpay/return')
+
+
 # ── Admin: Pricing ────────────────────────────────────────────────────
 @app.route('/admin/pricing')
 @admin_required
@@ -868,7 +1060,22 @@ def admin_pricing():
     rules = PriceRule.query.order_by(PriceRule.sort_order).all()
     surcharges = PriceSurcharge.query.all()
     holidays = HolidaySurcharge.query.order_by(HolidaySurcharge.date_from).all()
-    return render_template('admin/pricing.html', rules=rules, surcharges=surcharges, holidays=holidays)
+    newebpay_mode = os.environ.get('NEWEBPAY_MODE', 'test')
+    return render_template('admin/pricing.html', rules=rules, surcharges=surcharges, holidays=holidays,
+                           newebpay_mode=newebpay_mode)
+
+
+@app.route('/admin/pricing/newebpay_mode', methods=['POST'])
+@admin_required
+def admin_set_newebpay_mode():
+    """後台切換藍新測試/正式模式（動態設定 env）"""
+    mode = request.form.get('mode', 'test')
+    if mode in ('test', 'prod'):
+        os.environ['NEWEBPAY_MODE'] = mode
+        global NEWEBPAY_MODE
+        NEWEBPAY_MODE = mode
+        flash(f'藍新金流已切換為：{"正式環境" if mode=="prod" else "測試環境"}')
+    return redirect(url_for('admin_pricing'))
 
 @app.route('/admin/pricing/rules/add', methods=['POST'])
 @admin_required
@@ -1775,37 +1982,29 @@ def save_order(reply_token, session, user_id):
             note=session.get('note', ''),
             extra_stops=json.dumps(session.get('extra_stops', []), ensure_ascii=False),
             extra_stop_fee=session.get('extra_stop_fee', 0),
-            status='待確認'
+            status='待付款'   # 付款後才改為待確認
         )
         db.session.add(order)
         db.session.commit()
         order_id = order.id
-        # 若開啟自動搶單模式，立即發布給所有司機
-        if AUTO_DISPATCH:
-            try:
-                auto_dispatch_order(order_id)
-            except Exception as e:
-                print(f'Auto dispatch error: {e}')
-        # 推播報價給客人
-        try:
-            send_quote_to_customer(order)
-        except Exception as e:
-            print(f'Quote error: {e}')
+
+        # 推播付款連結給客人
+        base_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://airport-reservation.onrender.com')
+        pay_url = f'{base_url}/pay/{order_id}'
 
     bubble = {
         "type": "bubble",
-        "header": header_box("預約成功！"),
+        "header": header_box("預約資料已送出！"),
         "body": {"type": "box", "layout": "vertical", "contents": [
             {"type": "text", "text": f"訂單編號：#{order_id}", "size": "lg", "weight": "bold", "color": "#4A9B8F", "wrap": True},
-            {"type": "text", "text": "我們將盡快與您確認訂單。", "margin": "md", "wrap": True},
-            {"type": "text", "text": "如需查詢訂單狀態，請輸入「查詢訂單」。", "margin": "sm", "size": "sm", "color": "#888888", "wrap": True},
+            {"type": "text", "text": "請於 30 分鐘內完成定金支付（NT$315 含稅），訂單才會正式成立。", "margin": "md", "wrap": True},
             {"type": "separator", "margin": "md"},
-            {"type": "text", "text": "注意事項", "margin": "md", "weight": "bold", "size": "sm", "wrap": True},
-            {"type": "text", "text": "• 接機依航班實際落地為主，等待 90 分鐘\n• 任何異動（含行李件數）請七天前告知\n• 七天內無法異動、取消，定金不退\n• 車輛均投保乘客險 500 萬元以上／每人",
-             "size": "xs", "color": "#888888", "margin": "sm", "wrap": True}
+            {"type": "text", "text": f"定金金額：NT$315（含稅）", "margin": "md", "weight": "bold", "size": "md", "color": "#E05C00", "wrap": True},
+            {"type": "button", "action": {"type": "uri", "label": "立即支付定金 NT$315（含稅）", "uri": pay_url},
+             "style": "primary", "color": "#4A9B8F", "margin": "md"},
         ]}
     }
-    send_flex(reply_token, '預約成功', bubble)
+    send_flex(reply_token, '請完成定金支付', bubble)
 
     # 推播完整注意事項
     notice_text = (
