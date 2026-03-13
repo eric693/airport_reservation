@@ -123,6 +123,7 @@ handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
 ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin1234')
 ADMIN_LINE_USER_ID = os.environ.get('ADMIN_LINE_USER_ID', '')
+HUMAN_AGENT_LINE_ID = os.environ.get('HUMAN_AGENT_LINE_ID', 'rbf5256')  # 真人客服 LINE ID
 AUTO_DISPATCH = os.environ.get('AUTO_DISPATCH', '0') == '1'
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
 
@@ -1430,6 +1431,15 @@ def _handle_postback_inner(event):
         user_sessions.pop(user_id, None)
         reply_text(event.reply_token, '已取消預約。\n\n輸入「預約」重新開始。')
 
+    elif data == 'request_human':
+        # 推播通知真人客服
+        notify_human_agent(user_id)
+        reply_text(event.reply_token,
+            '✅ 已通知真人客服！\n\n'
+            '客服人員收到通知後將主動與您聯繫，請稍候。\n\n'
+            '如有急事，也可以直接加我們 LINE：rbf5256'
+        )
+
     elif data == 'start_booking':
         user_sessions[user_id] = {'step': 'choose_service'}
         send_service_menu(event.reply_token)
@@ -1506,6 +1516,37 @@ def _handle_postback_inner(event):
         reply_text(event.reply_token, '已略過此訂單。')
 
 # ── Menu senders ─────────────────────────────────────────────────────
+def notify_human_agent(requester_line_id):
+    """推播通知真人客服有人點了真人客服按鈕"""
+    if not HUMAN_AGENT_LINE_ID:
+        return
+    try:
+        # 嘗試取得使用者 profile（顯示名稱）
+        display_name = '客人'
+        try:
+            with ApiClient(configuration) as api_client:
+                profile = MessagingApi(api_client).get_profile(requester_line_id)
+                display_name = profile.display_name
+        except Exception:
+            pass
+
+        text = (
+            f"🔔 真人客服通知\n\n"
+            f"客人：{display_name}\n"
+            f"LINE ID：{requester_line_id}\n\n"
+            f"客人點擊了「真人客服」按鈕，請盡快介入回覆。"
+        )
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).push_message(
+                PushMessageRequest(
+                    to=HUMAN_AGENT_LINE_ID,
+                    messages=[TextMessage(text=text)]
+                )
+            )
+    except Exception as e:
+        app.logger.error(f'notify_human_agent error: {e}')
+
+
 def send_service_menu(reply_token):
     bubble = {
         "type": "bubble",
@@ -1791,6 +1832,8 @@ def send_main_menu(reply_token):
                  "style": "secondary"},
                 {"type": "button", "action": {"type": "postback", "label": "查詢我的訂單", "data": "query_order_start"},
                  "style": "secondary"},
+                {"type": "button", "action": {"type": "postback", "label": "👤 真人客服", "data": "request_human"},
+                 "style": "secondary", "color": "#E05C00"},
             ]
         }
     }
