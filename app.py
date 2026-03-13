@@ -127,12 +127,18 @@ HUMAN_AGENT_LINE_ID = os.environ.get('HUMAN_AGENT_LINE_ID', 'rbf5256')  # 真人
 AUTO_DISPATCH = os.environ.get('AUTO_DISPATCH', '0') == '1'
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
 
-# ── 藍新金流設定 ─────────────────────────────────────────────────────
-NEWEBPAY_MERCHANT_ID  = os.environ.get('NEWEBPAY_MERCHANT_ID', '')
+# ── 藍新金流設定（收款）────────────────────────────────────────────────
+NEWEBPAY_MERCHANT_ID  = os.environ.get('NEWEBPAY_MERCHANT_ID', '')   # MS3725965371（測試）
 NEWEBPAY_HASH_KEY     = os.environ.get('NEWEBPAY_HASH_KEY', '')
 NEWEBPAY_HASH_IV      = os.environ.get('NEWEBPAY_HASH_IV', '')
-NEWEBPAY_MODE         = os.environ.get('NEWEBPAY_MODE', 'test')
+NEWEBPAY_MODE         = os.environ.get('NEWEBPAY_MODE', 'test')       # test or prod
 NEWEBPAY_DEPOSIT      = 315
+
+# ── ezPay 電子發票設定 ────────────────────────────────────────────────
+EZPAY_MERCHANT_ID     = os.environ.get('EZPAY_MERCHANT_ID', '338919792')
+EZPAY_HASH_KEY        = os.environ.get('EZPAY_HASH_KEY', 'uXbTWrmBjLArC0Ln93CZEqC20eY5jBE0')
+EZPAY_HASH_IV         = os.environ.get('EZPAY_HASH_IV', 'PjvPgMj6OJppH8vC')
+EZPAY_MODE            = os.environ.get('EZPAY_MODE', 'prod')           # test or prod
 
 def newebpay_api_url():
     if NEWEBPAY_MODE == 'prod':
@@ -199,6 +205,106 @@ def build_newebpay_form(order_id: int, line_user_id: str, amt: int = NEWEBPAY_DE
 <p>正在前往付款頁面...</p>
 </body></html>"""
     return html
+
+
+# ── ezPay 電子發票開立 ────────────────────────────────────────────────
+def ezpay_invoice_encrypt(data_str: str) -> str:
+    """AES-256-CBC 加密 ezPay 發票 RespondType"""
+    key = EZPAY_HASH_KEY.encode('utf-8')
+    iv  = EZPAY_HASH_IV.encode('utf-8')
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    encrypted = cipher.encrypt(pad(data_str.encode('utf-8'), AES.block_size))
+    return base64.b64encode(encrypted).decode('utf-8')
+
+def issue_ezpay_invoice(order, invoice_type, carrier='', tax_id='', company_name=''):
+    """呼叫 ezPay API 開立電子發票
+    invoice_type: 'personal' / 'company' / ''
+    """
+    try:
+        if EZPAY_MODE == 'prod':
+            api_url = 'https://inv.ezpay.com.tw/Api/invoice_issue'
+        else:
+            api_url = 'https://cinv.ezpay.com.tw/Api/invoice_issue'
+
+        # 買受人資訊
+        if invoice_type == 'company':
+            buyer_name    = company_name or order.name
+            buyer_uni_no  = tax_id
+            carrier_type  = ''
+            carrier_num   = ''
+            print_flag    = '1'   # 紙本發票
+        elif invoice_type == 'personal' and carrier:
+            buyer_name    = order.name
+            buyer_uni_no  = ''
+            carrier_type  = '0'   # 手機條碼
+            carrier_num   = carrier
+            print_flag    = '0'
+        else:
+            # 不需要 or 個人雲端（無載具）
+            buyer_name    = order.name
+            buyer_uni_no  = ''
+            carrier_type  = ''
+            carrier_num   = ''
+            print_flag    = '0'
+
+        # 稅額計算（含稅 315 元，稅率 5%）
+        amt        = NEWEBPAY_DEPOSIT          # 315 含稅
+        tax_amt    = round(amt - amt / 1.05)   # 約 15 元
+        amt_excl   = amt - tax_amt             # 未稅 300
+
+        timestamp = int(datetime.now().timestamp())
+        resend_mark = '0'
+
+        params = {
+            'RespondType':  'JSON',
+            'Version':      '1.4',
+            'TimeStamp':    timestamp,
+            'MerchantOrderNo': f'INV{order.id}',
+            'Status':       '1',               # 立即開立
+            'Category':     'B2C' if not buyer_uni_no else 'B2B',
+            'BuyerName':    buyer_name,
+            'BuyerEmail':   order.email or '',
+            'BuyerUBN':     buyer_uni_no,
+            'CarrierType':  carrier_type,
+            'CarrierNum':   carrier_num,
+            'PrintFlag':    print_flag,
+            'TaxType':      '1',               # 應稅
+            'TaxRate':      '5',
+            'Amt':          amt_excl,
+            'TaxAmt':       tax_amt,
+            'TotalAmt':     amt,
+            'ItemName':     f'機場接送定金（訂單#{order.id}）',
+            'ItemCount':    '1',
+            'ItemUnit':     '筆',
+            'ItemAmt':      amt_excl,
+            'ItemTaxAmt':   tax_amt,
+            'Comment':      '',
+        }
+
+        post_data_str = urllib.parse.urlencode(params)
+        post_data_enc = ezpay_invoice_encrypt(post_data_str)
+
+        resp = requests.post(api_url, data={
+            'MerchantID_': EZPAY_MERCHANT_ID,
+            'PostData_':   post_data_enc,
+        }, timeout=10)
+
+        result = resp.json()
+        app.logger.info(f'ezPay invoice result: {result}')
+
+        if result.get('Status') == 'SUCCESS':
+            inv_data = result.get('Result', {})
+            inv_no   = inv_data.get('InvoiceNumber', '')
+            inv_date = inv_data.get('InvoiceDate', '')
+            app.logger.info(f'Invoice issued: {inv_no} ({inv_date})')
+            return inv_no
+        else:
+            app.logger.warning(f'ezPay invoice failed: {result.get("Message")}')
+            return None
+
+    except Exception as e:
+        app.logger.error(f'issue_ezpay_invoice error: {e}')
+        return None
 
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 
@@ -934,21 +1040,21 @@ def newebpay_notify():
         "✅ 定金支付成功！\n\n"
         f"訂單編號：#{order.id}\n"
         "我們將盡快與您確認訂單，感謝您的預約！\n\n"
-        "📋 預約須知與注意事項\n"
+        "預約須知與注意事項\n"
         "━━━━━━━━━━━━━━━━\n\n"
-        "✈️【接機說明】\n"
+        "【接機說明】\n"
         "• 接機以航班實際落地時間為準，等待 90 分鐘。\n"
         "• 取好行李後請主動聯繫司機，司機將告知見面地點與車牌。\n"
         "• 若等候超過 90 分鐘未能聯繫，預約將自動取消並離開現場。\n\n"
-        "📦【行李說明】\n"
+        "【行李說明】\n"
         "• 超過 28 吋或大型行李箱、胖胖箱等非標準行李，請事先告知。\n"
         "• 若到場後人數及行李與預約不符，司機有權拒絕載送，並不退費。\n\n"
-        "🔄【異動與取消】\n"
+        "【異動與取消】\n"
         "• 任何異動（包含行李件數）請於七天前告知。\n"
         "• 七天內任何理由均無法異動或取消，定金恕不退還。\n\n"
-        "🛡️【保險】\n"
+        "【保險】\n"
         "• 所有車輛均投保乘客險 500 萬元以上／每人。\n\n"
-        "如有任何問題，請隨時聯繫客服，感謝您的配合！🙏"
+        "如有任何問題，請隨時聯繫客服，感謝您的配合！"
     )
     try:
         with ApiClient(configuration) as api_client:
@@ -961,6 +1067,43 @@ def newebpay_notify():
         send_quote_to_customer(order)
     except Exception as e:
         app.logger.error(f'Post-payment push error: {e}')
+
+    # ── 自動開立 ezPay 電子發票 ──────────────────────────────────
+    try:
+        # 從 order.note 解析發票資訊
+        note = order.note or ''
+        inv_type = ''
+        carrier  = ''
+        tax_id   = ''
+        company_name = ''
+        if '【發票】公司抬頭：' in note:
+            inv_type = 'company'
+            # 格式: 【發票】公司抬頭：XXX（統編 XXXXXXXX）
+            import re
+            m = re.search(r'【發票】公司抬頭：(.+?)（統編 (.+?)）', note)
+            if m:
+                company_name = m.group(1)
+                tax_id       = m.group(2)
+        elif '【發票】手機載具：' in note:
+            inv_type = 'personal'
+            m = re.search(r'【發票】手機載具：(.+)', note)
+            if m:
+                carrier = m.group(1).strip()
+        elif '【發票】個人雲端發票' in note:
+            inv_type = 'personal'
+
+        inv_no = issue_ezpay_invoice(order, inv_type, carrier, tax_id, company_name)
+        if inv_no:
+            # 推播發票號碼給客人
+            with ApiClient(configuration) as api_client:
+                MessagingApi(api_client).push_message(
+                    PushMessageRequest(
+                        to=order.line_user_id,
+                        messages=[TextMessage(text=f'🧾 電子發票已開立\n發票號碼：{inv_no}\n\n如需查詢發票，請至財政部電子發票整合服務平台查詢。')]
+                    )
+                )
+    except Exception as e:
+        app.logger.error(f'ezPay invoice error: {e}')
 
     if AUTO_DISPATCH:
         try:
@@ -2088,22 +2231,22 @@ def save_order(reply_token, session, user_id):
     send_flex(reply_token, '請完成定金支付', bubble)
 
     notice_text = (
-        "📋 預約須知與注意事項\n"
+        "預約須知與注意事項\n"
         "━━━━━━━━━━━━━━━━\n\n"
-        "✈️【接機說明】\n"
+        "【接機說明】\n"
         "• 接機以航班實際落地時間為準，等待 90 分鐘。\n"
         "• 取好行李後請主動聯繫司機，司機將告知見面地點與車牌。\n"
         "• 若等候超過 90 分鐘未能聯繫，預約將自動取消並離開現場。\n\n"
-        "📦【行李說明】\n"
+        "【行李說明】\n"
         "• 超過 28 吋或大型行李箱、胖胖箱等非標準行李，請事先告知。\n"
         "• 行李定義：行李箱、嬰兒車、登機箱、警衛包等占用後車廂空間之物件。\n"
         "• 若到場後人數及行李與預約不符，司機有權拒絕載送，並不退費。\n\n"
-        "🔄【異動與取消】\n"
+        "【異動與取消】\n"
         "• 任何異動（包含行李件數）請於七天前告知。\n"
         "• 七天內任何理由均無法異動或取消，定金恕不退還。\n\n"
-        "🛡️【保險】\n"
+        "【保險】\n"
         "• 所有車輛均投保乘客險 500 萬元以上／每人。\n\n"
-        "如有任何問題，請隨時聯繫客服，感謝您的配合！🙏"
+        "如有任何問題，請隨時聯繫客服，感謝您的配合！"
     )
     try:
         with ApiClient(configuration) as api_client:
