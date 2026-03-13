@@ -190,7 +190,7 @@ def send_driver_info_to_customer(order, driver):
             "type": "box", "layout": "vertical", "backgroundColor": "#4A9B8F",
             "contents": [
                 {"type": "text", "text": "您的司機資料", "color": "#FFFFFF", "size": "xl", "weight": "bold"},
-                {"type": "text", "text": f"訂單 #{order.id}", "color": "#DDDDDD", "size": "sm"}
+                {"type": "text", "text": f"訂單 #{order.id}", "color": "#DDDDDD", "size": "sm", "wrap": True}
             ]
         },
         "body": {
@@ -200,7 +200,7 @@ def send_driver_info_to_customer(order, driver):
                 make_info_row("服務", order.service_name),
                 make_info_row("地點", order.pickup_location),
                 {"type": "separator", "margin": "md"},
-                {"type": "text", "text": "司機資訊", "weight": "bold", "margin": "md", "color": "#1A2B4A"},
+                {"type": "text", "text": "司機資訊", "weight": "bold", "margin": "md", "color": "#1A2B4A", "wrap": True},
                 make_info_row("司機姓名", driver.name),
                 make_info_row("聯絡電話", driver.phone),
                 make_info_row("車輛", f"{driver.car_brand}"),
@@ -606,8 +606,8 @@ def push_dispatch_to_driver(driver, order, job):
         "header": {
             "type": "box", "layout": "vertical", "backgroundColor": "#1A2B4A",
             "contents": [
-                {"type": "text", "text": "新訂單搶單通知", "color": "#FFFFFF", "size": "lg", "weight": "bold"},
-                {"type": "text", "text": f"訂單 #{order.id}　第一個搶到確認！", "color": "#8BA3C7", "size": "sm"}
+                {"type": "text", "text": "新訂單搶單通知", "color": "#FFFFFF", "size": "lg", "weight": "bold", "wrap": True},
+                {"type": "text", "text": f"訂單 #{order.id}　第一個搶到確認！", "color": "#8BA3C7", "size": "sm", "wrap": True}
             ]
         },
         "body": {
@@ -781,9 +781,9 @@ def _send_quote_bubble(order, quote):
     rows.append({
         "type": "box", "layout": "horizontal", "margin": "md",
         "contents": [
-            {"type": "text", "text": "預估總費用", "weight": "bold", "flex": 3, "size": "md"},
+            {"type": "text", "text": "預估總費用", "weight": "bold", "flex": 3, "size": "md", "wrap": True},
             {"type": "text", "text": f"NT${quote['total']:,}", "weight": "bold", "flex": 5,
-             "color": "#E05C00", "size": "lg", "align": "end"}
+             "color": "#E05C00", "size": "lg", "align": "end", "wrap": True}
         ]
     })
     rows.append({
@@ -797,7 +797,7 @@ def _send_quote_bubble(order, quote):
             "contents": [
                 {"type": "text", "text": "預約報價明細", "color": "#FFFFFF", "size": "xl", "weight": "bold"},
                 {"type": "text", "text": f"訂單 #{order.id}　{order.booking_date} {order.booking_time}",
-                 "color": "#8BA3C7", "size": "sm"}
+                 "color": "#8BA3C7", "size": "sm", "wrap": True}
             ]},
         "body": {"type": "box", "layout": "vertical", "contents": rows}
     }
@@ -1319,7 +1319,7 @@ def send_service_menu(reply_token):
         "type": "bubble",
         "header": header_box("機場接送預約"),
         "body": {"type": "box", "layout": "vertical", "contents": [
-            {"type": "text", "text": "請選擇服務類型", "size": "md", "color": "#333333", "margin": "md"},
+            {"type": "text", "text": "請選擇服務類型", "size": "md", "color": "#333333", "margin": "md", "wrap": True},
             {"type": "separator", "margin": "md"},
             make_button("預約送機（出境）", "service_departure", "primary"),
             make_button("預約接機（回國）", "service_arrival"),
@@ -1335,7 +1335,7 @@ def send_vehicle_menu(reply_token):
         "type": "bubble",
         "header": header_box("選擇車型"),
         "body": {"type": "box", "layout": "vertical", "contents": [
-            {"type": "text", "text": "請選擇車型", "size": "md", "color": "#333333"},
+            {"type": "text", "text": "請選擇車型", "size": "md", "color": "#333333", "wrap": True},
             {"type": "text", "text": "\n".join(desc_lines),
              "size": "xs", "color": "#888888", "margin": "sm", "wrap": True},
         ] + buttons}
@@ -1349,7 +1349,7 @@ def send_airport_menu(reply_token):
         "type": "bubble",
         "header": header_box("選擇機場"),
         "body": {"type": "box", "layout": "vertical", "contents": [
-            {"type": "text", "text": "請選擇機場", "size": "md", "color": "#333333"}
+            {"type": "text", "text": "請選擇機場", "size": "md", "color": "#333333", "wrap": True}
         ] + buttons}
     }
     send_flex(reply_token, '選擇機場', bubble)
@@ -1360,8 +1360,8 @@ def send_child_seat_menu(reply_token):
         "type": "bubble",
         "header": header_box("兒童安全座椅"),
         "body": {"type": "box", "layout": "vertical", "contents": [
-            {"type": "text", "text": "是否需要兒童安全座椅？", "size": "md", "color": "#333333"},
-            {"type": "text", "text": "每座加收 NT$200，每車最多 2 座，超過請聯繫客服", "size": "xs", "color": "#E05C00", "margin": "sm"},
+            {"type": "text", "text": "是否需要兒童安全座椅？", "size": "md", "color": "#333333", "wrap": True},
+            {"type": "text", "text": "每座加收 NT$200，每車最多 2 座，超過請聯繫客服", "size": "xs", "color": "#E05C00", "margin": "sm", "wrap": True},
         ] + buttons}
     }
     send_flex(reply_token, '兒童安全座椅', bubble)
@@ -1371,8 +1371,8 @@ def send_sign_board_menu(reply_token):
         "type": "bubble",
         "header": header_box("舉牌服務"),
         "body": {"type": "box", "layout": "vertical", "contents": [
-            {"type": "text", "text": "是否需要舉牌服務？", "size": "md", "color": "#333333"},
-            {"type": "text", "text": "舉牌人員於接機大廳舉名牌等候，加收 NT$300", "size": "xs", "color": "#888888", "margin": "sm"},
+            {"type": "text", "text": "是否需要舉牌服務？", "size": "md", "color": "#333333", "wrap": True},
+            {"type": "text", "text": "舉牌人員於接機大廳舉名牌等候，加收 NT$300", "size": "xs", "color": "#888888", "margin": "sm", "wrap": True},
             make_button("需要舉牌（+NT$300）", "sign_board_yes"),
             make_button("不需要", "sign_board_no"),
         ]}
@@ -1384,7 +1384,7 @@ def send_pet_menu(reply_token):
         "type": "bubble",
         "header": header_box("寵物同行"),
         "body": {"type": "box", "layout": "vertical", "contents": [
-            {"type": "text", "text": "是否有寵物同行？", "size": "md", "color": "#333333"},
+            {"type": "text", "text": "是否有寵物同行？", "size": "md", "color": "#333333", "wrap": True},
             {"type": "text", "text": "必須裝籠，行車中不可放出！加收 NT$300", "size": "xs", "color": "#888888", "margin": "sm", "wrap": True},
             make_button("有寵物同行（+NT$300）", "pet_yes"),
             make_button("沒有", "pet_no"),
@@ -1535,7 +1535,7 @@ def send_main_menu(reply_token):
         "header": {
             "type": "box", "layout": "vertical", "backgroundColor": "#1A2B4A",
             "contents": [
-                {"type": "text", "text": "Taiwan Top Service", "color": "#4A9B8F", "size": "sm", "weight": "bold"},
+                {"type": "text", "text": "Taiwan Top Service", "color": "#4A9B8F", "size": "sm", "weight": "bold", "wrap": True},
                 {"type": "text", "text": "機場接送服務", "color": "#FFFFFF", "size": "xxl", "weight": "bold", "margin": "xs"},
                 {"type": "text", "text": "您好！請問需要什麼服務？", "color": "#8BA3C7", "size": "sm", "margin": "sm", "wrap": True}
             ]
@@ -1574,7 +1574,7 @@ def send_extra_stops_menu(reply_token):
         "type": "bubble",
         "header": header_box("多點停靠服務"),
         "body": {"type": "box", "layout": "vertical", "contents": [
-            {"type": "text", "text": "是否需要途中加停？", "weight": "bold", "size": "md"},
+            {"type": "text", "text": "是否需要途中加停？", "weight": "bold", "size": "md", "wrap": True},
             {"type": "text", "text": "系統將依停靠點與出發地距離自動計算加收費用：", "size": "sm", "color": "#718096", "margin": "sm", "wrap": True},
             {"type": "separator", "margin": "md"},
             make_info_row("5 公里以內", "+NT$200"),
@@ -1668,9 +1668,9 @@ def send_order_confirm(reply_token, session):
         quote_rows.append({
             "type": "box", "layout": "horizontal", "margin": "sm",
             "contents": [
-                {"type": "text", "text": "預估總費用", "weight": "bold", "flex": 3, "size": "sm"},
+                {"type": "text", "text": "預估總費用", "weight": "bold", "flex": 3, "size": "sm", "wrap": True},
                 {"type": "text", "text": f"NT${quote['total']:,}", "weight": "bold",
-                 "flex": 5, "color": "#E05C00", "size": "lg", "align": "end"}
+                 "flex": 5, "color": "#E05C00", "size": "lg", "align": "end", "wrap": True}
             ]
         })
 
@@ -1703,7 +1703,7 @@ def send_order_confirm(reply_token, session):
         "header": {"type": "box", "layout": "vertical", "backgroundColor": "#1A2B4A",
             "contents": [
                 {"type": "text", "text": "預估報價明細", "color": "#FFFFFF", "size": "xl", "weight": "bold"},
-                {"type": "text", "text": "實際費用以出發當日為準", "color": "#8BA3C7", "size": "xs"}
+                {"type": "text", "text": "實際費用以出發當日為準", "color": "#8BA3C7", "size": "xs", "wrap": True}
             ]},
         "body": {"type": "box", "layout": "vertical", "contents":
             quote_rows if quote_rows else [{"type": "text", "text": "尚未設定此區域報價，將由客服確認", "color": "#A0AEC0", "size": "sm", "wrap": True}]
@@ -1796,11 +1796,11 @@ def save_order(reply_token, session, user_id):
         "type": "bubble",
         "header": header_box("預約成功！"),
         "body": {"type": "box", "layout": "vertical", "contents": [
-            {"type": "text", "text": f"訂單編號：#{order_id}", "size": "lg", "weight": "bold", "color": "#4A9B8F"},
+            {"type": "text", "text": f"訂單編號：#{order_id}", "size": "lg", "weight": "bold", "color": "#4A9B8F", "wrap": True},
             {"type": "text", "text": "我們將盡快與您確認訂單。", "margin": "md", "wrap": True},
             {"type": "text", "text": "如需查詢訂單狀態，請輸入「查詢訂單」。", "margin": "sm", "size": "sm", "color": "#888888", "wrap": True},
             {"type": "separator", "margin": "md"},
-            {"type": "text", "text": "注意事項", "margin": "md", "weight": "bold", "size": "sm"},
+            {"type": "text", "text": "注意事項", "margin": "md", "weight": "bold", "size": "sm", "wrap": True},
             {"type": "text", "text": "• 接機依航班實際落地為主，等待 90 分鐘\n• 任何異動（含行李件數）請七天前告知\n• 七天內無法異動、取消，定金不退\n• 車輛均投保乘客險 500 萬元以上／每人",
              "size": "xs", "color": "#888888", "margin": "sm", "wrap": True}
         ]}
@@ -1843,8 +1843,8 @@ def send_order_query_result(reply_token, orders):
         bubbles.append({
             "type": "bubble",
             "header": {"type": "box", "layout": "vertical", "backgroundColor": "#4A9B8F", "contents": [
-                {"type": "text", "text": f"訂單 #{order.id}", "color": "#FFFFFF", "size": "lg", "weight": "bold"},
-                {"type": "text", "text": order.created_at.strftime('%Y-%m-%d %H:%M'), "color": "#DDDDDD", "size": "sm"}
+                {"type": "text", "text": f"訂單 #{order.id}", "color": "#FFFFFF", "size": "lg", "weight": "bold", "wrap": True},
+                {"type": "text", "text": order.created_at.strftime('%Y-%m-%d %H:%M'), "color": "#DDDDDD", "size": "sm", "wrap": True}
             ]},
             "body": {"type": "box", "layout": "vertical", "contents": [
                 make_info_row("狀態", order.status),
@@ -1936,11 +1936,11 @@ def handle_driver_grab(reply_token, driver_line_id, job_id):
             "header": {"type": "box", "layout": "vertical", "backgroundColor": "#4A9B8F",
                 "contents": [
                     {"type": "text", "text": "搶單成功！", "color": "#FFFFFF", "size": "xl", "weight": "bold"},
-                    {"type": "text", "text": f"訂單 #{order.id}", "color": "#DDDDDD", "size": "sm"}
+                    {"type": "text", "text": f"訂單 #{order.id}", "color": "#DDDDDD", "size": "sm", "wrap": True}
                 ]},
             "body": {"type": "box", "layout": "vertical", "spacing": "sm",
                 "contents": [
-                    {"type": "text", "text": "客戶完整資料", "weight": "bold", "color": "#1A2B4A", "margin": "sm"},
+                    {"type": "text", "text": "客戶完整資料", "weight": "bold", "color": "#1A2B4A", "margin": "sm", "wrap": True},
                     {"type": "separator", "margin": "sm"},
                     make_info_row("姓名", order.name),
                     make_info_row("電話", order.phone),
