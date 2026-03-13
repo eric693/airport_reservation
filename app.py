@@ -456,9 +456,13 @@ def send_flex(reply_token, alt_text, contents):
         )
 
 def make_info_row(label, value):
+    # LINE Flex Message 不允許空字串 text，用「-」代替
+    safe_value = str(value).strip() if value is not None else '-'
+    if not safe_value:
+        safe_value = '-'
     return {"type": "box", "layout": "vertical", "margin": "sm", "contents": [
         {"type": "text", "text": label, "size": "xs", "color": "#888888", "wrap": True},
-        {"type": "text", "text": str(value), "size": "sm", "color": "#333333", "wrap": True, "margin": "xs"}
+        {"type": "text", "text": safe_value, "size": "sm", "color": "#333333", "wrap": True, "margin": "xs"}
     ]}
 
 def parse_date(text):
@@ -1763,7 +1767,19 @@ def handle_postback(event):
         _handle_postback_inner(event)
     except Exception as e:
         import traceback
-        print('handle_postback error:', traceback.format_exc())
+        tb = traceback.format_exc()
+        print('handle_postback error:', tb)
+        app.logger.error(f'handle_postback error: {tb}')
+        try:
+            with ApiClient(configuration) as api_client:
+                MessagingApi(api_client).reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text='系統處理時發生錯誤，請稍後再試或聯繫客服。')]
+                    )
+                )
+        except Exception:
+            pass
 
 def _handle_postback_inner(event):
     user_id = event.source.user_id
@@ -1907,6 +1923,13 @@ def _handle_postback_inner(event):
 
     # ── 多點停靠 ─────────────────────────────────────────────────────
     elif data == 'no_extra_stops':
+        # 檢查 session 是否完整（避免空值導致 LINE API 400）
+        required = ['service_name', 'vehicle', 'airport', 'pickup', 'date', 'time', 'name', 'phone']
+        missing  = [k for k in required if not session.get(k, '').strip() if isinstance(session.get(k, ''), str)]
+        if missing or not session.get('service'):
+            reply_text(event.reply_token, '預約資料已逾時或遺失，請重新點選「開始預約」。')
+            user_sessions.pop(user_id, None)
+            return
         session['step'] = 'confirm'
         user_sessions[user_id] = session
         send_order_confirm(event.reply_token, session)
