@@ -127,7 +127,7 @@ HUMAN_AGENT_LINE_ID = os.environ.get('HUMAN_AGENT_LINE_ID', 'rbf5256')  # 真人
 SUPPORT_GROUP_ID    = os.environ.get('SUPPORT_GROUP_ID', '')             # 客服群組 ID（推播真人客服通知用）
 AUTO_DISPATCH = os.environ.get('AUTO_DISPATCH', '0') == '1'
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
-AVIATIONSTACK_KEY   = os.environ.get('AVIATIONSTACK_API_KEY', '')  # AviationStack 航班查詢
+AVIATION_EDGE_KEY   = os.environ.get('AVIATION_EDGE_KEY', '')  # Aviation Edge API Key（航班查詢）
 
 # ── 藍新金流設定（收款）────────────────────────────────────────────────
 NEWEBPAY_MERCHANT_ID  = os.environ.get('NEWEBPAY_MERCHANT_ID', '')   # MS3725965371（測試）
@@ -822,65 +822,124 @@ EXTRA_STOP_TIERS = [
 
 def query_flight_info(flight_number: str, date_str: str = '') -> dict | None:
     """
-    呼叫 AviationStack 查詢航班資訊。
-    回傳 dict 或 None（查無 / API 未設定）。
-    回傳格式：
-    {
-        'flight':     'CI123',
-        'dep_airport': '桃園國際機場',
-        'arr_airport': '東京成田機場',
-        'dep_scheduled': '2025-06-15 08:30',
-        'arr_scheduled': '2025-06-15 12:45',
-        'status':     'scheduled',
-        'airline':    '中華航空',
-    }
+    呼叫 Aviation Edge API 查詢航班資訊。
+    策略：先查即時（flights），查無再查時刻表（timetable）。
+    回傳統一格式 dict 或 None。
     """
-    if not AVIATIONSTACK_KEY or not flight_number:
+    if not AVIATION_EDGE_KEY or not flight_number:
         return None
-    try:
-        # 清理航班號（去空格、全大寫）
-        fn = flight_number.strip().upper().replace(' ', '')
-        params = {
-            'access_key': AVIATIONSTACK_KEY,
-            'flight_iata': fn,
-            'limit': 1,
-        }
-        if date_str:
-            params['flight_date'] = date_str  # YYYY-MM-DD
-        resp = requests.get(
-            'https://api.aviationstack.com/v1/flights',
-            params=params, timeout=8
-        )
-        data = resp.json()
-        flights = data.get('data', [])
-        if not flights:
-            return None
-        f = flights[0]
-        dep = f.get('departure', {})
-        arr = f.get('arrival', {})
 
-        def fmt_time(t):
-            if not t:
-                return '未知'
-            try:
-                return datetime.fromisoformat(t[:16]).strftime('%Y-%m-%d %H:%M')
-            except Exception:
-                return t[:16]
+    fn = flight_number.strip().upper().replace(' ', '')
 
+    def fmt_time(t):
+        if not t:
+            return ''
+        try:
+            return datetime.fromisoformat(t[:16]).strftime('%Y-%m-%d %H:%M')
+        except Exception:
+            return t[:16]
+
+    def parse_record(f):
+        dep = f.get('departure', {}) or {}
+        arr = f.get('arrival',   {}) or {}
+        airline = f.get('airline', {}) or {}
+        flight  = f.get('flight',  {}) or {}
+        dep_delay = dep.get('delay', 0) or 0
+        arr_delay = arr.get('delay', 0) or 0
         return {
             'flight':        fn,
-            'dep_airport':   dep.get('airport', '未知'),
-            'arr_airport':   arr.get('airport', '未知'),
-            'dep_scheduled': fmt_time(dep.get('scheduled')),
-            'arr_scheduled': fmt_time(arr.get('scheduled')),
+            'airline':       airline.get('name', ''),
+            'status':        f.get('status', ''),
+            # 出發
+            'dep_airport':   dep.get('airport', dep.get('iataCode', '未知')),
+            'dep_iata':      dep.get('iataCode', ''),
             'dep_terminal':  dep.get('terminal', ''),
+            'dep_gate':      dep.get('gate', ''),
+            'dep_scheduled': fmt_time(dep.get('scheduledTime', '')),
+            'dep_estimated': fmt_time(dep.get('estimatedTime', '')),
+            'dep_actual':    fmt_time(dep.get('actualTime', '')),
+            'dep_delay':     int(dep_delay),
+            # 抵達
+            'arr_airport':   arr.get('airport', arr.get('iataCode', '未知')),
+            'arr_iata':      arr.get('iataCode', ''),
             'arr_terminal':  arr.get('terminal', ''),
-            'status':        f.get('flight_status', ''),
-            'airline':       (f.get('airline') or {}).get('name', ''),
+            'arr_gate':      arr.get('gate', ''),
+            'arr_baggage':   arr.get('baggage', ''),
+            'arr_scheduled': fmt_time(arr.get('scheduledTime', '')),
+            'arr_estimated': fmt_time(arr.get('estimatedTime', '')),
+            'arr_actual':    fmt_time(arr.get('actualTime', '')),
+            'arr_delay':     int(arr_delay),
         }
+
+    try:
+        # ── 方法 1：即時追蹤（航班在空中時有效）──
+        resp = requests.get(
+            'https://aviation-edge.com/v2/public/flights',
+            params={'key': AVIATION_EDGE_KEY, 'flightIata': fn},
+            timeout=8
+        )
+        data = resp.json()
+        if isinstance(data, list) and data:
+            # 即時 API 格式略不同，轉換欄位
+            f = data[0]
+            dep = f.get('departure', {}) or {}
+            arr = f.get('arrival',   {}) or {}
+            airline = f.get('airline', {}) or {}
+            geo = f.get('geography', {}) or {}
+            return {
+                'flight':        fn,
+                'airline':       airline.get('iataCode', ''),
+                'status':        f.get('status', ''),
+                'dep_airport':   dep.get('iataCode', '未知'),
+                'dep_iata':      dep.get('iataCode', ''),
+                'dep_terminal':  '', 'dep_gate':      '',
+                'dep_scheduled': '', 'dep_estimated': '', 'dep_actual': '',
+                'dep_delay':     0,
+                'arr_airport':   arr.get('iataCode', '未知'),
+                'arr_iata':      arr.get('iataCode', ''),
+                'arr_terminal':  '', 'arr_gate':      '', 'arr_baggage': '',
+                'arr_scheduled': '', 'arr_estimated': '', 'arr_actual': '',
+                'arr_delay':     0,
+                'altitude':      geo.get('altitude', ''),
+                'live':          True,
+            }
     except Exception as e:
-        app.logger.warning(f'query_flight_info error: {e}')
-        return None
+        app.logger.warning(f'aviation_edge flights error: {e}')
+
+    try:
+        # ── 方法 2：時刻表（timetable，起降前後最準確）──
+        # 用出發機場查詢，需先知道出發機場 IATA → 用 flight_iata 直接查
+        resp = requests.get(
+            'https://aviation-edge.com/v2/public/timetable',
+            params={
+                'key':         AVIATION_EDGE_KEY,
+                'flight_iata': fn,
+                'type':        'departure',
+            },
+            timeout=8
+        )
+        data = resp.json()
+        if isinstance(data, list) and data:
+            return parse_record(data[0])
+
+        # 試試 arrival
+        resp = requests.get(
+            'https://aviation-edge.com/v2/public/timetable',
+            params={
+                'key':         AVIATION_EDGE_KEY,
+                'flight_iata': fn,
+                'type':        'arrival',
+            },
+            timeout=8
+        )
+        data = resp.json()
+        if isinstance(data, list) and data:
+            return parse_record(data[0])
+
+    except Exception as e:
+        app.logger.warning(f'aviation_edge timetable error: {e}')
+
+    return None
 
 def get_distance_km(origin, destination):
     if not GOOGLE_MAPS_API_KEY:
@@ -1505,7 +1564,7 @@ def _handle_message_inner(event):
                 # 查無或 API 未設定 → 直接繼續
                 session['step'] = 'ask_child_seat'
                 user_sessions[user_id] = session
-                if AVIATIONSTACK_KEY:
+                if AVIATION_EDGE_KEY:
                     # 用 push 通知查無（不佔 reply_token），再用 reply 送選單
                     try:
                         with ApiClient(configuration) as api_client:
@@ -1880,43 +1939,92 @@ def send_airport_menu(reply_token):
 
 
 def send_flight_confirm(reply_token, flight_number, finfo):
-    """顯示查到的航班資訊，讓客人確認"""
-    service_map = {
-        'scheduled':  '準時',
-        'active':     '飛行中',
-        'landed':     '已降落',
-        'cancelled':  '已取消',
-        'incident':   '異常',
-        'diverted':   '改降',
+    """顯示查到的航班資訊（付費版完整欄位），讓客人確認"""
+    status_map = {
+        'scheduled': '準時',
+        'active':    '飛行中',
+        'landed':    '已降落',
+        'cancelled': '已取消',
+        'incident':  '異常',
+        'diverted':  '改降',
     }
-    status_text = service_map.get(finfo.get('status',''), finfo.get('status',''))
+    status_text = status_map.get(finfo.get('status', ''), finfo.get('status', '') or '未知')
 
-    dep_terminal = f"（航廈 {finfo['dep_terminal']}）" if finfo.get('dep_terminal') else ''
-    arr_terminal = f"（航廈 {finfo['arr_terminal']}）" if finfo.get('arr_terminal') else ''
+    # 狀態顏色
+    status_color = {
+        'scheduled': '#38A169', 'active': '#3182CE',
+        'landed':    '#38A169', 'cancelled': '#E53E3E',
+        'incident':  '#E53E3E', 'diverted': '#DD6B20',
+    }.get(finfo.get('status', ''), '#718096')
+
+    def time_row(label, scheduled, actual, estimated, delay):
+        """顯示時間欄位：優先實際時間，其次預估，最後預定"""
+        display = actual or estimated or scheduled or '未知'
+        row_items = [make_info_row(label, display)]
+        if delay and delay > 0:
+            row_items.append({
+                "type": "text",
+                "text": f"  延誤約 {delay} 分鐘",
+                "size": "xs", "color": "#E53E3E", "margin": "xs"
+            })
+        return row_items
+
+    dep_detail = finfo.get('dep_airport', '未知')
+    if finfo.get('dep_iata'):
+        dep_detail += f" ({finfo['dep_iata']})"
+    if finfo.get('dep_terminal'):
+        dep_detail += f" 航廈{finfo['dep_terminal']}"
+    if finfo.get('dep_gate'):
+        dep_detail += f" 登機門{finfo['dep_gate']}"
+
+    arr_detail = finfo.get('arr_airport', '未知')
+    if finfo.get('arr_iata'):
+        arr_detail += f" ({finfo['arr_iata']})"
+    if finfo.get('arr_terminal'):
+        arr_detail += f" 航廈{finfo['arr_terminal']}"
+    if finfo.get('arr_gate'):
+        arr_detail += f" 登機門{finfo['arr_gate']}"
+
+    body_contents = (
+        [make_info_row("出發", dep_detail)]
+        + time_row("出發時間",
+                   finfo.get('dep_scheduled'), finfo.get('dep_actual'),
+                   finfo.get('dep_estimated'), finfo.get('dep_delay', 0))
+        + [{"type": "separator", "margin": "sm"}]
+        + [make_info_row("抵達", arr_detail)]
+        + time_row("抵達時間",
+                   finfo.get('arr_scheduled'), finfo.get('arr_actual'),
+                   finfo.get('arr_estimated'), finfo.get('arr_delay', 0))
+    )
+    if finfo.get('arr_baggage'):
+        body_contents.append(make_info_row("行李轉盤", finfo['arr_baggage']))
+
+    body_contents += [
+        {"type": "separator", "margin": "sm"},
+        {"type": "box", "layout": "horizontal", "margin": "sm", "contents": [
+            {"type": "text", "text": "航班狀態", "size": "sm", "color": "#A0AEC0", "flex": 2},
+            {"type": "text", "text": status_text, "size": "sm",
+             "color": status_color, "weight": "bold", "flex": 3},
+        ]},
+        {"type": "text", "text": "以上資訊是否正確？", "margin": "md",
+         "weight": "bold", "color": "#E05C00", "size": "sm", "wrap": True},
+    ]
 
     bubble = {
         "type": "bubble",
         "header": {
             "type": "box", "layout": "vertical", "backgroundColor": "#1A2B4A",
             "contents": [
-                {"type": "text", "text": f"航班資訊確認", "color": "#FFFFFF", "size": "xl", "weight": "bold"},
-                {"type": "text", "text": f"{finfo.get('airline','')}  {flight_number}",
-                 "color": "#8BA3C7", "size": "sm", "wrap": True}
+                {"type": "text", "text": "航班資訊確認",
+                 "color": "#FFFFFF", "size": "xl", "weight": "bold"},
+                {"type": "text",
+                 "text": f"{finfo.get('airline', '')}  {flight_number}",
+                 "color": "#8BA3C7", "size": "sm", "wrap": True},
             ]
         },
         "body": {
             "type": "box", "layout": "vertical", "spacing": "sm",
-            "contents": [
-                make_info_row("出發機場", f"{finfo['dep_airport']}{dep_terminal}"),
-                make_info_row("出發時間", finfo['dep_scheduled']),
-                {"type": "separator", "margin": "sm"},
-                make_info_row("抵達機場", f"{finfo['arr_airport']}{arr_terminal}"),
-                make_info_row("抵達時間", finfo['arr_scheduled']),
-                {"type": "separator", "margin": "sm"},
-                make_info_row("航班狀態", status_text or '未知'),
-                {"type": "text", "text": "以上資訊是否正確？", "margin": "md",
-                 "weight": "bold", "color": "#E05C00", "size": "sm", "wrap": True},
-            ]
+            "contents": body_contents
         },
         "footer": {
             "type": "box", "layout": "horizontal", "spacing": "sm",
