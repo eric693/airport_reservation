@@ -187,14 +187,14 @@ def build_newebpay_form(order_id: int, line_user_id: str, amt: int = NEWEBPAY_DE
         'ItemDesc':       f'機場接送定金（含稅）訂單#{order_id}',
         'Email':          '',
         'LoginType':      0,
-        'CREDIT':         1,
-        'ANDROIDPAY':     1,
-        'SAMSUNGPAY':     1,
-        'APPLEPAY':       1,
-        'WEBATM':         1,
-        'VACC':           1,
-        'CVS':            0,
-        'BARCODE':        0,
+        'CREDIT':         1,   # 信用卡（含分期）
+        'ANDROIDPAY':     0,   # Google Pay（需另外申請）
+        'SAMSUNGPAY':     0,   # Samsung Pay（需另外申請）
+        'APPLEPAY':       0,   # Apple Pay（需另外申請，關閉避免直接跳轉）
+        'WEBATM':         1,   # 網路ATM
+        'VACC':           1,   # 虛擬帳號
+        'CVS':            0,   # 超商代碼
+        'BARCODE':        0,   # 超商條碼
         'ReturnURL':      f'{base_url}/newebpay/return',
         'NotifyURL':      f'{base_url}/newebpay/notify',
         'CustomerURL':    f'{base_url}/newebpay/return',
