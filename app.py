@@ -124,6 +124,7 @@ ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin1234')
 ADMIN_LINE_USER_ID = os.environ.get('ADMIN_LINE_USER_ID', '')
 HUMAN_AGENT_LINE_ID = os.environ.get('HUMAN_AGENT_LINE_ID', 'rbf5256')  # 真人客服 LINE ID
+SUPPORT_GROUP_ID    = os.environ.get('SUPPORT_GROUP_ID', '')             # 客服群組 ID（推播真人客服通知用）
 AUTO_DISPATCH = os.environ.get('AUTO_DISPATCH', '0') == '1'
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
 
@@ -1282,6 +1283,18 @@ def _handle_message_inner(event):
         reply_text(event.reply_token, f'您的 LINE User ID：\n{user_id}\n\n請將此 ID 提供給管理員，設定後即可接收搶單通知。')
         return
 
+    if text in ['群組ID', 'groupid', 'GROUP ID']:
+        source_type = event.source.type
+        if source_type == 'group':
+            group_id = event.source.group_id
+            reply_text(event.reply_token, f'此群組 ID：\n{group_id}\n\n請將此 ID 填入 Render 環境變數 SUPPORT_GROUP_ID')
+        elif source_type == 'room':
+            room_id = event.source.room_id
+            reply_text(event.reply_token, f'此聊天室 ID：\n{room_id}')
+        else:
+            reply_text(event.reply_token, '請在群組裡輸入此指令才能取得群組 ID。')
+        return
+
     if text == '取消':
         user_sessions.pop(user_id, None)
         reply_text(event.reply_token, '已取消操作。')
@@ -1683,11 +1696,9 @@ def _handle_postback_inner(event):
 
 # ── Menu senders ─────────────────────────────────────────────────────
 def notify_human_agent(requester_line_id):
-    """推播通知真人客服有人點了真人客服按鈕"""
-    if not HUMAN_AGENT_LINE_ID:
-        return
+    """推播通知真人客服有人點了真人客服按鈕（推播給群組 + 個人）"""
     try:
-        # 嘗試取得使用者 profile（顯示名稱）
+        # 取得客人顯示名稱
         display_name = '客人'
         try:
             with ApiClient(configuration) as api_client:
@@ -1697,18 +1708,29 @@ def notify_human_agent(requester_line_id):
             pass
 
         text = (
-            f"🔔 真人客服通知\n\n"
+            f"【真人客服通知】\n\n"
             f"客人：{display_name}\n"
             f"LINE ID：{requester_line_id}\n\n"
-            f"客人點擊了「真人客服」按鈕，請盡快介入回覆。"
+            f"客人點擊了「真人客服」按鈕，請盡快介入回覆！"
         )
+        targets = []
+        if SUPPORT_GROUP_ID:
+            targets.append(SUPPORT_GROUP_ID)   # 群組優先
+        if HUMAN_AGENT_LINE_ID:
+            targets.append(HUMAN_AGENT_LINE_ID) # 個人也通知
+
         with ApiClient(configuration) as api_client:
-            MessagingApi(api_client).push_message(
-                PushMessageRequest(
-                    to=HUMAN_AGENT_LINE_ID,
-                    messages=[TextMessage(text=text)]
-                )
-            )
+            api = MessagingApi(api_client)
+            for target in targets:
+                try:
+                    api.push_message(
+                        PushMessageRequest(
+                            to=target,
+                            messages=[TextMessage(text=text)]
+                        )
+                    )
+                except Exception as e:
+                    app.logger.error(f'notify_human_agent push error ({target}): {e}')
     except Exception as e:
         app.logger.error(f'notify_human_agent error: {e}')
 
