@@ -160,3 +160,26 @@ class HolidaySurcharge(db.Model):
     amount = db.Column(db.Integer, default=300)
     active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class SiteSetting(db.Model):
+    """全站設定（key-value 形式）"""
+    __tablename__ = 'site_settings'
+
+    id    = db.Column(db.Integer, primary_key=True)
+    key   = db.Column(db.String(100), unique=True, nullable=False)
+    value = db.Column(db.Text, default='')
+
+    @classmethod
+    def get(cls, key, default=''):
+        row = cls.query.filter_by(key=key).first()
+        return row.value if row else default
+
+    @classmethod
+    def set(cls, key, value):
+        row = cls.query.filter_by(key=key).first()
+        if row:
+            row.value = value
+        else:
+            db.session.add(cls(key=key, value=value))
+        db.session.commit()

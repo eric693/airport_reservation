@@ -21,7 +21,7 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, PostbackEvent
 from apscheduler.schedulers.background import BackgroundScheduler
-from database import db, Order, Driver, VehicleType, AirportOption, DispatchJob, DispatchResponse, PriceRule, PriceSurcharge, HolidaySurcharge
+from database import db, Order, Driver, VehicleType, AirportOption, DispatchJob, DispatchResponse, PriceRule, PriceSurcharge, HolidaySurcharge, SiteSetting
 from functools import wraps
 
 app = Flask(__name__)
@@ -177,6 +177,12 @@ def newebpay_decrypt(trade_info_enc: str) -> dict:
 
 def build_newebpay_form(order_id: int, line_user_id: str, amt: int = NEWEBPAY_DEPOSIT) -> str:
     base_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://airport-reservation.onrender.com')
+    # 動態取得付款方式設定
+    try:
+        _pm_str = SiteSetting.get('payment_methods', 'CREDIT,WEBATM,VACC')
+        _payment_methods = set(_pm_str.split(','))
+    except Exception:
+        _payment_methods = {'CREDIT', 'WEBATM', 'VACC'}
     trade_info = urllib.parse.urlencode({
         'MerchantID':     NEWEBPAY_MERCHANT_ID,
         'RespondType':    'JSON',
@@ -187,14 +193,9 @@ def build_newebpay_form(order_id: int, line_user_id: str, amt: int = NEWEBPAY_DE
         'ItemDesc':       f'機場接送定金（含稅）訂單#{order_id}',
         'Email':          '',
         'LoginType':      0,
-        'CREDIT':         1,   # 信用卡（含分期）
-        'ANDROIDPAY':     0,   # Google Pay（需另外申請）
-        'SAMSUNGPAY':     0,   # Samsung Pay（需另外申請）
-        'APPLEPAY':       0,   # Apple Pay（需另外申請，關閉避免直接跳轉）
-        'WEBATM':         1,   # 網路ATM
-        'VACC':           1,   # 虛擬帳號
-        'CVS':            0,   # 超商代碼
-        'BARCODE':        0,   # 超商條碼
+        # ── 付款方式（從後台 SiteSetting 動態讀取）──
+        **{m: (1 if m in _payment_methods else 0) for m in
+           ['CREDIT','ANDROIDPAY','SAMSUNGPAY','APPLEPAY','WEBATM','VACC','CVS','BARCODE']},
         'ReturnURL':      f'{base_url}/newebpay/return',
         'NotifyURL':      f'{base_url}/newebpay/notify',
         'CustomerURL':    f'{base_url}/newebpay/return',
@@ -1282,11 +1283,13 @@ def admin_pricing():
     ezpay_mode    = os.environ.get('EZPAY_MODE', 'test')
     ezpay_merchant_id = os.environ.get('EZPAY_MERCHANT_ID', '338919792')
     ezpay_key_set = bool(os.environ.get('EZPAY_HASH_KEY', ''))
+    payment_methods = SiteSetting.get('payment_methods', 'CREDIT,WEBATM,VACC').split(',')
     return render_template('admin/pricing.html', rules=rules, surcharges=surcharges, holidays=holidays,
                            newebpay_mode=newebpay_mode,
                            ezpay_mode=ezpay_mode,
                            ezpay_merchant_id=ezpay_merchant_id,
-                           ezpay_key_set=ezpay_key_set)
+                           ezpay_key_set=ezpay_key_set,
+                           payment_methods=payment_methods)
 
 
 @app.route('/admin/pricing/newebpay_mode', methods=['POST'])
@@ -1298,6 +1301,14 @@ def admin_set_newebpay_mode():
         global NEWEBPAY_MODE
         NEWEBPAY_MODE = mode
         flash(f'藍新金流已切換為：{"正式環境" if mode=="prod" else "測試環境"}')
+    return redirect(url_for('admin_pricing'))
+
+@app.route('/admin/pricing/payment_methods', methods=['POST'])
+@admin_required
+def admin_set_payment_methods():
+    methods = request.form.getlist('methods')
+    SiteSetting.set('payment_methods', ','.join(methods) if methods else 'CREDIT')
+    flash('付款方式已更新')
     return redirect(url_for('admin_pricing'))
 
 @app.route('/admin/pricing/ezpay_mode', methods=['POST'])
