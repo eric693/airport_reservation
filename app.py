@@ -1960,6 +1960,131 @@ def send_airport_menu(reply_token):
     send_flex(reply_token, '選擇機場', bubble)
 
 
+
+def _push_flight_confirm(user_id, flight_number, finfo):
+    """用 push_message 傳送航班確認卡片（背景執行緒用）"""
+    try:
+        status_map = {
+            'scheduled': '準時', 'active': '飛行中', 'landed': '已降落',
+            'cancelled': '已取消', 'incident': '異常', 'diverted': '改降',
+            'en-route': '飛行中', 'unknown': '未知',
+        }
+        status_color = {
+            'scheduled': '#38A169', 'active': '#3182CE', 'en-route': '#3182CE',
+            'landed': '#38A169', 'cancelled': '#E53E3E',
+            'incident': '#E53E3E', 'diverted': '#DD6B20',
+        }
+        status_text  = status_map.get(finfo.get('status', ''), finfo.get('status', '') or '未知')
+        s_color      = status_color.get(finfo.get('status', ''), '#718096')
+
+        def fmt_rows(label, scheduled, actual, estimated, delay):
+            display = actual or estimated or scheduled or '未知'
+            rows = [make_info_row(label, display)]
+            if delay and int(delay) > 0:
+                rows.append({"type": "text", "text": f"  延誤約 {delay} 分鐘",
+                              "size": "xs", "color": "#E53E3E", "margin": "xs"})
+            return rows
+
+        dep_detail = finfo.get('dep_airport', finfo.get('dep_iata', '未知'))
+        if finfo.get('dep_iata') and finfo['dep_iata'] not in dep_detail:
+            dep_detail += f" ({finfo['dep_iata']})"
+        if finfo.get('dep_terminal'): dep_detail += f" 航廈{finfo['dep_terminal']}"
+        if finfo.get('dep_gate'):     dep_detail += f" 登機門{finfo['dep_gate']}"
+
+        arr_detail = finfo.get('arr_airport', finfo.get('arr_iata', '未知'))
+        if finfo.get('arr_iata') and finfo['arr_iata'] not in arr_detail:
+            arr_detail += f" ({finfo['arr_iata']})"
+        if finfo.get('arr_terminal'): arr_detail += f" 航廈{finfo['arr_terminal']}"
+        if finfo.get('arr_gate'):     arr_detail += f" 登機門{finfo['arr_gate']}"
+
+        body = (
+            [make_info_row("出發", dep_detail)]
+            + fmt_rows("出發時間", finfo.get('dep_scheduled'), finfo.get('dep_actual'),
+                       finfo.get('dep_estimated'), finfo.get('dep_delay', 0))
+            + [{"type": "separator", "margin": "sm"}]
+            + [make_info_row("抵達", arr_detail)]
+            + fmt_rows("抵達時間", finfo.get('arr_scheduled'), finfo.get('arr_actual'),
+                       finfo.get('arr_estimated'), finfo.get('arr_delay', 0))
+        )
+        if finfo.get('arr_baggage'):
+            body.append(make_info_row("行李轉盤", finfo['arr_baggage']))
+        body += [
+            {"type": "separator", "margin": "sm"},
+            {"type": "box", "layout": "horizontal", "margin": "sm", "contents": [
+                {"type": "text", "text": "航班狀態", "size": "sm", "color": "#A0AEC0", "flex": 2},
+                {"type": "text", "text": status_text, "size": "sm",
+                 "color": s_color, "weight": "bold", "flex": 3},
+            ]},
+            {"type": "text", "text": "以上資訊是否正確？", "margin": "md",
+             "weight": "bold", "color": "#E05C00", "size": "sm", "wrap": True},
+        ]
+        bubble = {
+            "type": "bubble",
+            "header": {
+                "type": "box", "layout": "vertical", "backgroundColor": "#1A2B4A",
+                "contents": [
+                    {"type": "text", "text": "航班資訊確認",
+                     "color": "#FFFFFF", "size": "xl", "weight": "bold"},
+                    {"type": "text", "text": f"{finfo.get('airline','')}  {flight_number}",
+                     "color": "#8BA3C7", "size": "sm", "wrap": True},
+                ]
+            },
+            "body": {"type": "box", "layout": "vertical", "spacing": "sm", "contents": body},
+            "footer": {
+                "type": "box", "layout": "horizontal", "spacing": "sm",
+                "contents": [
+                    {"type": "button",
+                     "action": {"type": "message", "label": "正確，繼續", "text": "確認"},
+                     "style": "primary", "color": "#4A9B8F", "flex": 1},
+                    {"type": "button",
+                     "action": {"type": "message", "label": "重新輸入", "text": "重填"},
+                     "style": "secondary", "flex": 1},
+                ]
+            }
+        }
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).push_message(
+                PushMessageRequest(
+                    to=user_id,
+                    messages=[FlexMessage(
+                        alt_text=f'航班資訊 {flight_number}',
+                        contents=FlexContainer.from_dict(bubble)
+                    )]
+                )
+            )
+    except Exception as e:
+        app.logger.error(f'_push_flight_confirm error: {e}')
+
+
+def _push_child_seat_menu(user_id):
+    """用 push_message 傳送兒童安全座椅選單（背景執行緒用）"""
+    try:
+        buttons = [make_button(name, f"child_seat_{key}") for key, name in CHILD_SEATS.items()]
+        bubble = {
+            "type": "bubble",
+            "header": header_box("兒童安全座椅"),
+            "body": {"type": "box", "layout": "vertical", "contents": [
+                {"type": "text", "text": "是否需要兒童安全座椅？",
+                 "size": "md", "color": "#333333", "wrap": True},
+                {"type": "text",
+                 "text": "每座加收 NT$200，每車最多 2 座，超過請聯繫客服",
+                 "size": "xs", "color": "#E05C00", "margin": "sm", "wrap": True},
+            ] + buttons}
+        }
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).push_message(
+                PushMessageRequest(
+                    to=user_id,
+                    messages=[FlexMessage(
+                        alt_text='兒童安全座椅',
+                        contents=FlexContainer.from_dict(bubble)
+                    )]
+                )
+            )
+    except Exception as e:
+        app.logger.error(f'_push_child_seat_menu error: {e}')
+
+
 def send_flight_confirm(reply_token, flight_number, finfo):
     """顯示查到的航班資訊（付費版完整欄位），讓客人確認"""
     status_map = {
