@@ -28,23 +28,20 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'change-this-secret')
 
 database_url = os.environ.get('DATABASE_URL', 'sqlite:///airport.db')
-# 將 postgres:// 轉為 postgresql+psycopg:// 以使用 psycopg v3 驅動
 if database_url.startswith('postgres://'):
     database_url = database_url.replace('postgres://', 'postgresql+psycopg://', 1)
 elif database_url.startswith('postgresql://') and '+' not in database_url.split('://')[0]:
     database_url = database_url.replace('postgresql://', 'postgresql+psycopg://', 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-# 修正 psycopg v3 SSL 連線逾時問題：定期回收連線
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    'poolclass': NullPool,   # 每次請求用完即關閉連線，解決 SSL 逾時問題
+    'poolclass': NullPool,
     'pool_pre_ping': True,
 }
 
 db.init_app(app)
 with app.app_context():
     db.create_all()
-    # 自動補上新增的欄位（ALTER TABLE，已存在時略過）
     _migrations = [
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS extra_stops TEXT DEFAULT ''",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS extra_stop_fee INTEGER DEFAULT 0",
@@ -53,7 +50,6 @@ with app.app_context():
         "ALTER TABLE dispatch_jobs ADD COLUMN IF NOT EXISTS deadline TIMESTAMP",
         "ALTER TABLE dispatch_jobs ADD COLUMN IF NOT EXISTS note VARCHAR(200) DEFAULT ''",
         "ALTER TABLE dispatch_jobs ADD COLUMN IF NOT EXISTS notify_customer BOOLEAN DEFAULT TRUE",
-        # 報價三張表（確保一定存在，就算 database.py 是舊版也能自動建）
         "CREATE TABLE IF NOT EXISTS price_rules (id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL, airport_keyword VARCHAR(50) DEFAULT '', region_keyword VARCHAR(100) DEFAULT '', base_price INTEGER DEFAULT 0, note TEXT DEFAULT '', active BOOLEAN DEFAULT TRUE, sort_order INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT NOW())",
         "CREATE TABLE IF NOT EXISTS price_surcharges (id SERIAL PRIMARY KEY, key VARCHAR(50) UNIQUE NOT NULL, name VARCHAR(50) NOT NULL, amount INTEGER DEFAULT 0, enabled BOOLEAN DEFAULT TRUE, note VARCHAR(100) DEFAULT '')",
         "CREATE TABLE IF NOT EXISTS holiday_surcharges (id SERIAL PRIMARY KEY, name VARCHAR(50) DEFAULT '', date_from VARCHAR(10) NOT NULL, date_to VARCHAR(10) NOT NULL, amount INTEGER DEFAULT 300, active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT NOW())",
@@ -106,7 +102,6 @@ with app.app_context():
         ]
         db.session.add_all(defaults)
         db.session.commit()
-    # 預設區域報價規則
     if PriceRule.query.count() == 0:
         defaults = [
             PriceRule(
@@ -127,16 +122,16 @@ handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
 
 ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin1234')
-ADMIN_LINE_USER_ID = os.environ.get('ADMIN_LINE_USER_ID', '')  # 後台管理員的 LINE User ID（搶單成功時收通知）
-AUTO_DISPATCH = os.environ.get('AUTO_DISPATCH', '0') == '1'   # 設為 1 時，客人送出預約後自動發布搶單
-GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')  # Google Maps API Key（用於多點距離計算）
+ADMIN_LINE_USER_ID = os.environ.get('ADMIN_LINE_USER_ID', '')
+AUTO_DISPATCH = os.environ.get('AUTO_DISPATCH', '0') == '1'
+GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
 
 # ── 藍新金流設定 ─────────────────────────────────────────────────────
 NEWEBPAY_MERCHANT_ID  = os.environ.get('NEWEBPAY_MERCHANT_ID', '')
 NEWEBPAY_HASH_KEY     = os.environ.get('NEWEBPAY_HASH_KEY', '')
 NEWEBPAY_HASH_IV      = os.environ.get('NEWEBPAY_HASH_IV', '')
-NEWEBPAY_MODE         = os.environ.get('NEWEBPAY_MODE', 'test')  # 'test' or 'prod'
-NEWEBPAY_DEPOSIT      = 315  # 固定定金金額（含稅）
+NEWEBPAY_MODE         = os.environ.get('NEWEBPAY_MODE', 'test')
+NEWEBPAY_DEPOSIT      = 315
 
 def newebpay_api_url():
     if NEWEBPAY_MODE == 'prod':
@@ -144,7 +139,6 @@ def newebpay_api_url():
     return 'https://ccore.newebpay.com/MPG/mpg_gateway'
 
 def newebpay_encrypt(trade_info: str) -> str:
-    """AES-256-CBC 加密 TradeInfo"""
     key = NEWEBPAY_HASH_KEY.encode('utf-8')
     iv  = NEWEBPAY_HASH_IV.encode('utf-8')
     cipher = AES.new(key, AES.MODE_CBC, iv)
@@ -152,12 +146,10 @@ def newebpay_encrypt(trade_info: str) -> str:
     return encrypted.hex()
 
 def newebpay_sha256(trade_info_enc: str) -> str:
-    """SHA256 產生 TradeSha"""
     raw = f'HashKey={NEWEBPAY_HASH_KEY}&{trade_info_enc}&HashIV={NEWEBPAY_HASH_IV}'
     return hashlib.sha256(raw.encode('utf-8')).hexdigest().upper()
 
 def newebpay_decrypt(trade_info_enc: str) -> dict:
-    """AES 解密藍新回傳的 TradeInfo"""
     try:
         key = NEWEBPAY_HASH_KEY.encode('utf-8')
         iv  = NEWEBPAY_HASH_IV.encode('utf-8')
@@ -169,7 +161,6 @@ def newebpay_decrypt(trade_info_enc: str) -> dict:
         return {}
 
 def build_newebpay_form(order_id: int, line_user_id: str, amt: int = NEWEBPAY_DEPOSIT) -> str:
-    """產生藍新付款表單 HTML（由 /pay/<order_id> 路由回傳）"""
     base_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://airport-reservation.onrender.com')
     trade_info = urllib.parse.urlencode({
         'MerchantID':     NEWEBPAY_MERCHANT_ID,
@@ -181,14 +172,14 @@ def build_newebpay_form(order_id: int, line_user_id: str, amt: int = NEWEBPAY_DE
         'ItemDesc':       f'機場接送定金（含稅）訂單#{order_id}',
         'Email':          '',
         'LoginType':      0,
-        'CREDIT':         1,   # 信用卡
-        'ANDROIDPAY':     1,   # Google Pay
-        'SAMSUNGPAY':     1,   # Samsung Pay
-        'APPLEPAY':       1,   # Apple Pay（需藍新後台開通）
-        'WEBATM':         1,   # 網路 ATM
-        'VACC':           1,   # ATM 轉帳（虛擬帳號）
-        'CVS':            0,   # 超商代碼（金額限制，關閉）
-        'BARCODE':        0,   # 超商條碼（關閉）
+        'CREDIT':         1,
+        'ANDROIDPAY':     1,
+        'SAMSUNGPAY':     1,
+        'APPLEPAY':       1,
+        'WEBATM':         1,
+        'VACC':           1,
+        'CVS':            0,
+        'BARCODE':        0,
         'ReturnURL':      f'{base_url}/newebpay/return',
         'NotifyURL':      f'{base_url}/newebpay/notify',
         'CustomerURL':    f'{base_url}/newebpay/return',
@@ -207,7 +198,8 @@ def build_newebpay_form(order_id: int, line_user_id: str, amt: int = NEWEBPAY_DE
 <p>正在前往付款頁面...</p>
 </body></html>"""
     return html
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')             # OpenAI API Key（用於 AI 客服對話）
+
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 
 user_sessions = {}
 
@@ -237,9 +229,8 @@ def keep_alive():
 
 # ── Auto-notify scheduler ───────────────────────────────────────────
 def check_and_notify():
-    """每分鐘檢查是否有訂單需要發送司機資料給客人"""
     with app.app_context():
-        now = datetime.utcnow() + timedelta(hours=8)  # 轉為台灣時間
+        now = datetime.utcnow() + timedelta(hours=8)
         orders = Order.query.filter(
             Order.status == '已確認',
             Order.driver_id != None,
@@ -247,7 +238,6 @@ def check_and_notify():
             Order.notify_at != '',
             Order.notify_at != None,
         ).all()
-
         for order in orders:
             try:
                 booking_dt = datetime.strptime(
@@ -255,7 +245,6 @@ def check_and_notify():
                 )
                 hours_before = int(order.notify_at)
                 notify_time = booking_dt - timedelta(hours=hours_before)
-
                 if now >= notify_time:
                     driver = order.driver
                     if driver:
@@ -266,7 +255,6 @@ def check_and_notify():
                 print(f"Notify error for order {order.id}: {e}")
 
 def send_driver_info_to_customer(order, driver):
-    """推播司機資料給客人的 LINE"""
     bubble = {
         "type": "bubble",
         "header": {
@@ -290,11 +278,8 @@ def send_driver_info_to_customer(order, driver):
                 make_info_row("車牌", driver.car_plate),
                 make_info_row("車身顏色", driver.car_color),
                 {"type": "separator", "margin": "md"},
-                {
-                    "type": "text",
-                    "text": "如有任何問題請直接致電司機，祝您旅途愉快！",
-                    "size": "xs", "color": "#888888", "margin": "md", "wrap": True
-                }
+                {"type": "text", "text": "如有任何問題請直接致電司機，祝您旅途愉快！",
+                 "size": "xs", "color": "#888888", "margin": "md", "wrap": True}
             ]
         }
     }
@@ -361,15 +346,9 @@ def make_info_row(label, value):
     ]}
 
 def parse_date(text):
-    """支援多種日期格式，回傳 YYYY-MM-DD 字串，失敗回傳 None"""
     text = text.strip().replace('。', '').replace(' ', '')
     now = datetime.now()
-    formats = [
-        '%Y-%m-%d',   # 2025-06-15
-        '%Y/%m/%d',   # 2025/06/15
-        '%m/%d',      # 06/15
-        '%m-%d',      # 06-15
-    ]
+    formats = ['%Y-%m-%d', '%Y/%m/%d', '%m/%d', '%m-%d']
     for fmt in formats:
         try:
             dt = datetime.strptime(text, fmt)
@@ -380,12 +359,10 @@ def parse_date(text):
             return dt.strftime('%Y-%m-%d')
         except ValueError:
             pass
-    # 純數字：615 → 06/15，20250615 → 2025-06-15
     digits = ''.join(filter(str.isdigit, text))
     if len(digits) == 8:
         try:
-            dt = datetime.strptime(digits, '%Y%m%d')
-            return dt.strftime('%Y-%m-%d')
+            return datetime.strptime(digits, '%Y%m%d').strftime('%Y-%m-%d')
         except ValueError:
             pass
     if len(digits) == 4:
@@ -454,7 +431,6 @@ def admin_update_status(order_id):
     new_status = request.form.get('status')
     order.status = new_status
     db.session.commit()
-    # 後台手動將狀態改為「已確認」且尚無搶單任務 → 詢問是否要發布搶單（透過 flash 提示）
     if new_status == '已確認' and not order.dispatch_job:
         flash('訂單已確認。若要發布搶單，請至右側「搶單模組」操作。')
     else:
@@ -467,10 +443,9 @@ def admin_assign_driver(order_id):
     order = Order.query.get_or_404(order_id)
     driver_id = request.form.get('driver_id')
     notify_at = request.form.get('notify_at', '2')
-
     order.driver_id = int(driver_id) if driver_id else None
     order.notify_at = notify_at
-    order.driver_notified = False  # 重置，允許重新發送
+    order.driver_notified = False
     db.session.commit()
     flash(f'已指派司機，將於出發前 {notify_at} 小時自動發送司機資料給客人')
     return redirect(url_for('admin_order_detail', order_id=order_id))
@@ -478,7 +453,6 @@ def admin_assign_driver(order_id):
 @app.route('/admin/order/<int:order_id>/notify_now', methods=['POST'])
 @admin_required
 def admin_notify_now(order_id):
-    """立即發送司機資料"""
     order = Order.query.get_or_404(order_id)
     if order.driver:
         send_driver_info_to_customer(order, order.driver)
@@ -637,7 +611,6 @@ def admin_delete_airport(aid):
 @app.route('/admin/order/<int:order_id>/dispatch', methods=['POST'])
 @admin_required
 def admin_create_dispatch(order_id):
-    """建立搶單任務並推播給所有啟用司機"""
     order = Order.query.get_or_404(order_id)
     if hasattr(order, 'dispatch_job') and order.dispatch_job:
         flash('此訂單已有搶單任務')
@@ -651,7 +624,6 @@ def admin_create_dispatch(order_id):
     )
     db.session.add(job)
     db.session.commit()
-    # 推播給所有有 line_user_id 的啟用司機
     drivers = Driver.query.filter(Driver.active == True, Driver.line_user_id != '').all()
     sent = 0
     for driver in drivers:
@@ -683,7 +655,6 @@ def admin_dispatch_list():
     return render_template('admin/dispatch.html', jobs=jobs)
 
 def push_dispatch_to_driver(driver, order, job):
-    """推播搶單通知給單一司機"""
     bubble = {
         "type": "bubble",
         "header": {
@@ -710,16 +681,10 @@ def push_dispatch_to_driver(driver, order, job):
         "footer": {
             "type": "box", "layout": "horizontal", "spacing": "sm",
             "contents": [
-                {
-                    "type": "button",
-                    "action": {"type": "postback", "label": "我要接單", "data": f"grab:{job.id}"},
-                    "style": "primary", "color": "#4A9B8F", "flex": 1
-                },
-                {
-                    "type": "button",
-                    "action": {"type": "postback", "label": "略過", "data": f"skip:{job.id}"},
-                    "style": "secondary", "flex": 1
-                }
+                {"type": "button", "action": {"type": "postback", "label": "我要接單", "data": f"grab:{job.id}"},
+                 "style": "primary", "color": "#4A9B8F", "flex": 1},
+                {"type": "button", "action": {"type": "postback", "label": "略過", "data": f"skip:{job.id}"},
+                 "style": "secondary", "flex": 1}
             ]
         }
     }
@@ -733,14 +698,13 @@ def push_dispatch_to_driver(driver, order, job):
 
 # ── 距離計算（Google Maps）────────────────────────────────────────────
 EXTRA_STOP_TIERS = [
-    (5,   200),   # 0-5 公里
-    (12,  300),   # 5-12 公里
-    (18,  400),   # 12-18 公里
-    (999, 500),   # 超過 18 公里
+    (5,   200),
+    (12,  300),
+    (18,  400),
+    (999, 500),
 ]
 
 def get_distance_km(origin, destination):
-    """呼叫 Google Maps Distance Matrix API 取得兩點距離（公里）"""
     if not GOOGLE_MAPS_API_KEY:
         return None
     try:
@@ -761,7 +725,6 @@ def get_distance_km(origin, destination):
         return None
 
 def calc_extra_stop_fee(distance_km):
-    """根據距離計算多點加收金額"""
     if distance_km is None:
         return None, None
     for limit, fee in EXTRA_STOP_TIERS:
@@ -772,7 +735,6 @@ def calc_extra_stop_fee(distance_km):
 
 # ── 報價計算 ─────────────────────────────────────────────────────────
 def calculate_quote(order):
-    """根據訂單內容計算報價，回傳 dict"""
     result = {
         'base_price': 0,
         'base_rule': '未設定區域報價',
@@ -782,7 +744,6 @@ def calculate_quote(order):
         'total': 0,
         'breakdown': [],
     }
-    # 1. 基本價：比對區域規則
     rules = PriceRule.query.filter_by(active=True).order_by(PriceRule.sort_order).all()
     for rule in rules:
         airport_match = not rule.airport_keyword or rule.airport_keyword in order.airport
@@ -796,33 +757,28 @@ def calculate_quote(order):
             result['breakdown'].append({'label': f'基本車資（{rule.name}）', 'amount': rule.base_price})
             break
 
-    # 2. 夜間加費
     surcharge_map = {s.key: s for s in PriceSurcharge.query.filter_by(enabled=True).all()}
     if order.night_fee and 'night' in surcharge_map:
         amt = surcharge_map['night'].amount
         result['surcharges'].append({'label': surcharge_map['night'].name, 'amount': amt})
         result['breakdown'].append({'label': surcharge_map['night'].name, 'amount': amt})
 
-    # 3. 舉牌服務
     if order.sign_board and 'sign_board' in surcharge_map:
         amt = surcharge_map['sign_board'].amount
         result['surcharges'].append({'label': surcharge_map['sign_board'].name, 'amount': amt})
         result['breakdown'].append({'label': surcharge_map['sign_board'].name, 'amount': amt})
 
-    # 4. 兒童安全座椅
     if order.child_seat_count and 'child_seat' in surcharge_map:
         amt = surcharge_map['child_seat'].amount * order.child_seat_count
         label = f'{surcharge_map["child_seat"].name} x{order.child_seat_count}'
         result['surcharges'].append({'label': label, 'amount': amt})
         result['breakdown'].append({'label': label, 'amount': amt})
 
-    # 5. 寵物同行
     if order.pet and 'pet' in surcharge_map:
         amt = surcharge_map['pet'].amount
         result['surcharges'].append({'label': surcharge_map['pet'].name, 'amount': amt})
         result['breakdown'].append({'label': surcharge_map['pet'].name, 'amount': amt})
 
-    # 6. 七天內 / 三天內預約加收
     try:
         from datetime import date
         booking = date.fromisoformat(order.booking_date)
@@ -839,9 +795,8 @@ def calculate_quote(order):
     except Exception:
         pass
 
-    # 7. 假日加收
     try:
-        booking_md = order.booking_date[5:]  # MM-DD
+        booking_md = order.booking_date[5:]
         holidays = HolidaySurcharge.query.filter_by(active=True).all()
         for h in holidays:
             if h.date_from <= booking_md <= h.date_to:
@@ -858,7 +813,6 @@ def calculate_quote(order):
 
 
 def _send_quote_bubble(order, quote):
-    """實際組裝並發送報價 Flex 給客人"""
     rows = [make_info_row(item['label'], f"NT${item['amount']:,}") for item in quote['breakdown']]
     rows.append({"type": "separator", "margin": "md"})
     rows.append({
@@ -886,8 +840,7 @@ def _send_quote_bubble(order, quote):
     }
     try:
         with ApiClient(configuration) as api_client:
-            line_bot_api = MessagingApi(api_client)
-            line_bot_api.push_message(PushMessageRequest(
+            MessagingApi(api_client).push_message(PushMessageRequest(
                 to=order.line_user_id,
                 messages=[FlexMessage(alt_text='預約報價明細', contents=FlexContainer.from_dict(bubble))]
             ))
@@ -896,10 +849,6 @@ def _send_quote_bubble(order, quote):
 
 
 def send_quote_to_customer(order):
-    """預約成功後推播報價給客人
-
-    多點停靠邏輯：若最後停靠點能比對到區域規則，以該點基本價為主，不加多點費。
-    """
     import json as _json
     extra_stops = []
     try:
@@ -919,7 +868,6 @@ def send_quote_to_customer(order):
             if airport_match and region_match:
                 matched_rule = rule
                 break
-
         if matched_rule:
             original_pickup = order.pickup_location
             order.pickup_location = last_stop
@@ -933,22 +881,18 @@ def send_quote_to_customer(order):
             _send_quote_bubble(order, quote)
             return
 
-    # 一般流程（無停靠點，或停靠點比對不到）
     quote = calculate_quote(order)
     if order.extra_stop_fee:
         quote['breakdown'].append({'label': '多點加收', 'amount': order.extra_stop_fee})
         quote['total'] += order.extra_stop_fee
     if quote['base_price'] == 0:
-        return  # 無報價規則，不推播
-
+        return
     _send_quote_bubble(order, quote)
 
 
 # ── 藍新金流路由 ─────────────────────────────────────────────────────
-
 @app.route('/pay/<int:order_id>')
 def pay_deposit(order_id):
-    """導向藍新付款頁面"""
     order = Order.query.get_or_404(order_id)
     if order.status != '待付款':
         return '<h2>此訂單已完成付款或不需付款</h2>', 400
@@ -959,12 +903,10 @@ def pay_deposit(order_id):
 
 @app.route('/newebpay/notify', methods=['POST'])
 def newebpay_notify():
-    """藍新付款結果通知（Server to Server，背景通知）"""
-    status   = request.form.get('Status')
+    status         = request.form.get('Status')
     trade_info_enc = request.form.get('TradeInfo', '')
     trade_sha      = request.form.get('TradeSha', '')
 
-    # 驗證 TradeSha
     expected = newebpay_sha256(trade_info_enc)
     if trade_sha.upper() != expected.upper():
         app.logger.warning('Newebpay TradeSha mismatch')
@@ -984,11 +926,9 @@ def newebpay_notify():
     if not order:
         return 'OK'
 
-    # 更新訂單狀態
     order.status = '待確認'
     db.session.commit()
 
-    # 推播付款成功通知給客人
     notice_text = (
         "✅ 定金支付成功！\n\n"
         f"訂單編號：#{order.id}\n"
@@ -1021,7 +961,6 @@ def newebpay_notify():
     except Exception as e:
         app.logger.error(f'Post-payment push error: {e}')
 
-    # 自動搶單
     if AUTO_DISPATCH:
         try:
             auto_dispatch_order(order.id)
@@ -1033,7 +972,6 @@ def newebpay_notify():
 
 @app.route('/newebpay/return', methods=['POST', 'GET'])
 def newebpay_return():
-    """付款完成後導回的頁面（客人瀏覽器）"""
     status = request.form.get('Status', request.args.get('Status', ''))
     if status == 'SUCCESS':
         return """<html><head><meta charset="utf-8">
@@ -1056,7 +994,6 @@ def newebpay_return():
 
 @app.route('/newebpay/cancel', methods=['POST', 'GET'])
 def newebpay_cancel():
-    """付款取消"""
     return redirect('/newebpay/return')
 
 
@@ -1075,7 +1012,6 @@ def admin_pricing():
 @app.route('/admin/pricing/newebpay_mode', methods=['POST'])
 @admin_required
 def admin_set_newebpay_mode():
-    """後台切換藍新測試/正式模式（動態設定 env）"""
     mode = request.form.get('mode', 'test')
     if mode in ('test', 'prod'):
         os.environ['NEWEBPAY_MODE'] = mode
@@ -1175,7 +1111,6 @@ def _handle_message_inner(event):
     session = user_sessions.get(user_id, {})
     step = session.get('step', '')
 
-    # ── 特殊指令（優先處理）────────────────────────────────────────
     if text in ['我的ID', 'myid', 'MY ID']:
         reply_text(event.reply_token, f'您的 LINE User ID：\n{user_id}\n\n請將此 ID 提供給管理員，設定後即可接收搶單通知。')
         return
@@ -1186,12 +1121,10 @@ def _handle_message_inner(event):
         send_main_menu(event.reply_token)
         return
 
-    # ── 觸發主選單關鍵字 ──────────────────────────────────────────
     if text in ['開始', 'hi', 'Hi', 'HI', 'hello', 'Hello', '你好', '哈囉'] and not step:
         send_main_menu(event.reply_token)
         return
 
-    # ── 預約相關關鍵字（直接跳入預約流程）──────────────────────────
     if text in ['預約', '訂車', '機場接送', '開始預約']:
         user_sessions[user_id] = {'step': 'choose_service'}
         send_service_menu(event.reply_token)
@@ -1202,9 +1135,7 @@ def _handle_message_inner(event):
         reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
         return
 
-    # ── AI 聊天模式 ────────────────────────────────────────────────
     if step == 'ai_chat':
-        # 在 AI 模式中，若客人說要預約就切換流程
         if any(kw in text for kw in ['預約', '訂車', '我要訂', '我想訂', '幫我訂']):
             user_sessions[user_id] = {'step': 'choose_service'}
             reply_text(event.reply_token, '好的！幫您切換到預約流程 ✈️')
@@ -1214,7 +1145,6 @@ def _handle_message_inner(event):
             user_sessions[user_id] = {'step': 'query_name'}
             reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
             return
-        # 一般 AI 對話（無記憶，每次獨立）
         ai_reply = ask_openai(user_id, text)
         reply_text(event.reply_token, ai_reply)
         return
@@ -1268,7 +1198,7 @@ def _handle_message_inner(event):
             session['night_fee'] = is_night_time(text)
             session['step'] = 'input_passengers'
             user_sessions[user_id] = session
-            night_msg = '' # 不指定優惠方案不加收夜間費
+            night_msg = ''
             reply_text(event.reply_token, f'已記錄時間：{text}{night_msg}\n\n請輸入乘客人數，最多7人（數字）：')
         except ValueError:
             reply_text(event.reply_token, '時間格式錯誤，請重新輸入，例如：08:30')
@@ -1329,16 +1259,43 @@ def _handle_message_inner(event):
 
     elif step == 'input_note':
         session['note'] = '' if text == '無' else text
+        # ── 新功能：詢問電子發票 ──
+        session['step'] = 'ask_invoice'
+        user_sessions[user_id] = session
+        send_invoice_menu(event.reply_token)
+
+    # ── 新功能：電子發票輸入步驟 ──
+    elif step == 'input_carrier':
+        session['invoice_carrier'] = '' if text == '無' else text.strip()
         session['step'] = 'ask_extra_stops'
         session['extra_stops'] = []
         session['extra_stop_fee'] = 0
         user_sessions[user_id] = session
+        _push_est_travel(user_id, session)
+        send_extra_stops_menu(event.reply_token)
+
+    elif step == 'input_tax_id':
+        tax_id = text.strip()
+        if len(tax_id) == 8 and tax_id.isdigit():
+            session['invoice_tax_id'] = tax_id
+            session['step'] = 'input_company_name'
+            user_sessions[user_id] = session
+            reply_text(event.reply_token, '請輸入公司抬頭（公司名稱）：')
+        else:
+            reply_text(event.reply_token, '統一編號格式錯誤，請輸入 8 碼數字：')
+
+    elif step == 'input_company_name':
+        session['invoice_company_name'] = text.strip()
+        session['step'] = 'ask_extra_stops'
+        session['extra_stops'] = []
+        session['extra_stop_fee'] = 0
+        user_sessions[user_id] = session
+        _push_est_travel(user_id, session)
         send_extra_stops_menu(event.reply_token)
 
     elif step == 'input_extra_stop':
         stop_addr = text.strip()
         stops = session.get('extra_stops', [])
-        # 計算與主接送地點或上一個點的距離
         origin = stops[-1] if stops else session.get('pickup', '')
         distance_km = get_distance_km(origin, stop_addr)
         fee, km = calc_extra_stop_fee(distance_km)
@@ -1365,13 +1322,11 @@ def _handle_message_inner(event):
             stop_num = len(session.get('extra_stops', [])) + 1
             reply_text(event.reply_token, f'請輸入第 {stop_num} 個停靠點地址：')
         else:
-            # 完成 or 任何其他輸入都進入確認
             session['step'] = 'confirm'
             user_sessions[user_id] = session
             send_order_confirm(event.reply_token, session)
 
     else:
-        # 沒有進行中流程 → AI 回覆（若有 OpenAI Key）或顯示主選單
         if OPENAI_API_KEY:
             user_sessions[user_id] = {'step': 'ai_chat'}
             ai_reply = ask_openai(user_id, text)
@@ -1449,8 +1404,6 @@ def _handle_postback_inner(event):
         send_pet_menu(event.reply_token)
 
     elif data == 'pet_yes':
-        if False:  # 不指定車款，無需升等
-            session['vehicle'] = '不指定車款'
         session['pet'] = True
         session['step'] = 'input_note'
         user_sessions[user_id] = session
@@ -1463,7 +1416,6 @@ def _handle_postback_inner(event):
         reply_text(event.reply_token, '請輸入備註事項（若無請輸入「無」）：')
 
     elif data == 'confirm_order' or data.startswith('confirm_order:'):
-        # 優先從 postback data 解碼 session，避免 worker 重啟後 memory session 丟失
         if ':' in data:
             decoded = decode_session(data.split(':', 1)[1])
             if decoded:
@@ -1478,7 +1430,6 @@ def _handle_postback_inner(event):
         user_sessions.pop(user_id, None)
         reply_text(event.reply_token, '已取消預約。\n\n輸入「預約」重新開始。')
 
-    # ── 主選單按鈕 ──────────────────────────────────────────────────
     elif data == 'start_booking':
         user_sessions[user_id] = {'step': 'choose_service'}
         send_service_menu(event.reply_token)
@@ -1495,6 +1446,33 @@ def _handle_postback_inner(event):
     elif data == 'query_order_start':
         user_sessions[user_id] = {'step': 'query_name'}
         reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
+
+    # ── 新功能：電子發票 postback ──────────────────────────────────
+    elif data == 'invoice_personal':
+        session['invoice_type'] = 'personal'
+        session['invoice_carrier'] = ''
+        session['step'] = 'input_carrier'
+        user_sessions[user_id] = session
+        reply_text(event.reply_token,
+            '請輸入手機條碼載具（格式：/XXXXXXX，共8碼）：\n\n'
+            '例：/ABC1234\n\n若無載具請輸入「無」，發票將開立為個人雲端發票。'
+        )
+
+    elif data == 'invoice_company':
+        session['invoice_type'] = 'company'
+        session['step'] = 'input_tax_id'
+        user_sessions[user_id] = session
+        reply_text(event.reply_token, '請輸入公司統一編號（8碼數字）：')
+
+    elif data == 'invoice_none':
+        session['invoice_type'] = ''
+        session['invoice_carrier'] = ''
+        session['step'] = 'ask_extra_stops'
+        session['extra_stops'] = []
+        session['extra_stop_fee'] = 0
+        user_sessions[user_id] = session
+        _push_est_travel(user_id, session)
+        send_extra_stops_menu(event.reply_token)
 
     # ── 多點停靠 ─────────────────────────────────────────────────────
     elif data == 'no_extra_stops':
@@ -1606,6 +1584,69 @@ def send_pet_menu(reply_token):
     }
     send_flex(reply_token, '寵物同行', bubble)
 
+# ── 新功能 1：電子發票選單 ─────────────────────────────────────────────
+def send_invoice_menu(reply_token):
+    bubble = {
+        "type": "bubble",
+        "header": {
+            "type": "box", "layout": "vertical", "backgroundColor": "#2D6A4F",
+            "contents": [
+                {"type": "text", "text": "電子發票", "color": "#FFFFFF", "size": "xl", "weight": "bold"},
+                {"type": "text", "text": "請選擇發票開立方式", "color": "#B7E4C7", "size": "sm", "margin": "xs"}
+            ]
+        },
+        "body": {
+            "type": "box", "layout": "vertical", "spacing": "sm",
+            "contents": [
+                {"type": "text",
+                 "text": "定金 NT$315 將開立電子發票，請選擇收取方式：",
+                 "size": "sm", "color": "#555555", "wrap": True, "margin": "sm"},
+                {"type": "separator", "margin": "md"},
+                make_button("個人載具（手機條碼）", "invoice_personal"),
+                make_button("公司抬頭（統一編號）", "invoice_company"),
+                make_button("不需要 / 稍後再說", "invoice_none"),
+            ]
+        }
+    }
+    send_flex(reply_token, '電子發票', bubble)
+
+# ── 新功能 2：預估車程（push，不佔 reply_token）──────────────────────
+def _push_est_travel(user_id, session):
+    """呼叫 Google Maps 預估機場→目的地車程，用 push_message 傳給客人"""
+    try:
+        airport = session.get('airport', '')
+        pickup  = session.get('pickup', '')
+        if not airport or not pickup or not GOOGLE_MAPS_API_KEY:
+            return
+        params = {
+            'origins':      airport,
+            'destinations': pickup,
+            'key':          GOOGLE_MAPS_API_KEY,
+            'language':     'zh-TW',
+            'region':       'tw',
+            'mode':         'driving',
+        }
+        resp = requests.get(
+            'https://maps.googleapis.com/maps/api/distancematrix/json',
+            params=params, timeout=5
+        )
+        element = resp.json()['rows'][0]['elements'][0]
+        if element.get('status') != 'OK':
+            return
+        dist_text = element['distance']['text']
+        dur_text  = element['duration']['text']
+        msg = f"預估車程（{airport} → {pickup}）\n距離：{dist_text}\n行車時間：{dur_text}"
+        line_user_id = session.get('_line_user_id', user_id)
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).push_message(
+                PushMessageRequest(
+                    to=line_user_id,
+                    messages=[TextMessage(text=msg)]
+                )
+            )
+    except Exception as e:
+        app.logger.warning(f'_push_est_travel error: {e}')
+
 # ── OpenAI AI 客服 ────────────────────────────────────────────────────
 AI_SYSTEM_PROMPT = """你是「機場接送服務」的親切客服助理，名字叫「小飛」。
 
@@ -1707,32 +1748,20 @@ A：目前已經是優惠活動，沒有再有任何優惠，回程還需要關�
 """
 
 def ask_openai(user_id, user_message, order_context=None):
-    """呼叫 OpenAI API（無記憶模式），回傳 AI 回應文字"""
     if not OPENAI_API_KEY:
         return '目前 AI 客服功能未啟用，請輸入「預約」開始預約，或輸入「查詢訂單」查詢訂單。'
-
     system = AI_SYSTEM_PROMPT
     if order_context:
         system += f"\n\n【客人訂單資料（僅供參考）】\n{order_context}"
-
     messages = [
         {'role': 'system', 'content': system},
         {'role': 'user', 'content': user_message},
     ]
-
     try:
         resp = requests.post(
             'https://api.openai.com/v1/chat/completions',
-            headers={
-                'Authorization': f'Bearer {OPENAI_API_KEY}',
-                'Content-Type': 'application/json',
-            },
-            json={
-                'model': 'gpt-4o-mini',
-                'messages': messages,
-                'max_tokens': 400,
-                'temperature': 0.75,
-            },
+            headers={'Authorization': f'Bearer {OPENAI_API_KEY}', 'Content-Type': 'application/json'},
+            json={'model': 'gpt-4o-mini', 'messages': messages, 'max_tokens': 400, 'temperature': 0.75},
             timeout=15
         )
         data = resp.json()
@@ -1743,7 +1772,6 @@ def ask_openai(user_id, user_message, order_context=None):
 
 
 def send_main_menu(reply_token):
-    """主選單：選擇 AI 聊天 或 開始預約"""
     bubble = {
         "type": "bubble",
         "header": {
@@ -1757,33 +1785,22 @@ def send_main_menu(reply_token):
         "body": {
             "type": "box", "layout": "vertical", "spacing": "md",
             "contents": [
-                {
-                    "type": "button",
-                    "action": {"type": "postback", "label": "開始預約", "data": "start_booking"},
-                    "style": "primary", "color": "#4A9B8F",
-                },
-                {
-                    "type": "button",
-                    "action": {"type": "postback", "label": "詢問客服 / 了解服務", "data": "start_ai_chat"},
-                    "style": "secondary",
-                },
-                {
-                    "type": "button",
-                    "action": {"type": "postback", "label": "查詢我的訂單", "data": "query_order_start"},
-                    "style": "secondary",
-                },
+                {"type": "button", "action": {"type": "postback", "label": "開始預約", "data": "start_booking"},
+                 "style": "primary", "color": "#4A9B8F"},
+                {"type": "button", "action": {"type": "postback", "label": "詢問客服 / 了解服務", "data": "start_ai_chat"},
+                 "style": "secondary"},
+                {"type": "button", "action": {"type": "postback", "label": "查詢我的訂單", "data": "query_order_start"},
+                 "style": "secondary"},
             ]
         }
     }
     send_flex(reply_token, 'Taiwan Top Service 機場接送服務', bubble)
 
 def send_main_menu_after(reply_token, user_id=None):
-    """送出主選單（用 reply_token）"""
     send_main_menu(reply_token)
 
 
 def send_extra_stops_menu(reply_token):
-    """詢問是否有多點停靠"""
     bubble = {
         "type": "bubble",
         "header": header_box("多點停靠服務"),
@@ -1807,12 +1824,6 @@ def send_extra_stops_menu(reply_token):
 
 
 def build_quote_from_session(session):
-    """從 session 預先計算報價（訂單未儲存，用假 Order 物件）
-    
-    多點停靠邏輯：
-    - 若最後一個停靠點可以比對到區域規則 → 以該點為起算基本價，不加多點費
-    - 若比對不到 → 沿用出發地基本價，並加上多點距離加收費
-    """
     class FakeOrder:
         pass
     o = FakeOrder()
@@ -1826,8 +1837,6 @@ def build_quote_from_session(session):
     o.extra_stop_fee   = session.get('extra_stop_fee', 0)
 
     extra_stops = session.get('extra_stops', [])
-
-    # 若有停靠點，嘗試以最後一個停靠點重新比對區域規則
     if extra_stops:
         last_stop = extra_stops[-1]
         rules = PriceRule.query.filter_by(active=True).order_by(PriceRule.sort_order).all()
@@ -1840,19 +1849,15 @@ def build_quote_from_session(session):
             if airport_match and region_match:
                 matched_rule = rule
                 break
-
         if matched_rule:
-            # 最後停靠點有對應區域規則 → 用新基本價，不加多點費
-            o.pickup_location = last_stop   # 讓 calculate_quote 用新地點比對
+            o.pickup_location = last_stop
             o.extra_stop_fee  = 0
             quote = calculate_quote(o)
-            # 在說明裡標注實際出發地
             origin = session.get('pickup', '')
             if quote['breakdown']:
                 quote['breakdown'][0]['label'] = f'基本車資（{matched_rule.name}，途經 {origin}）'
             return quote
 
-    # 無停靠點，或停靠點比對不到規則 → 原始邏輯：出發地基本價 + 多點加收
     quote = calculate_quote(o)
     if o.extra_stop_fee:
         quote['surcharges'].append({'label': '多點加收', 'amount': o.extra_stop_fee})
@@ -1870,7 +1875,6 @@ def send_order_confirm(reply_token, session):
     if session.get('pet'): extras.append('寵物同行')
     extra_stops = session.get('extra_stops', [])
 
-    # 計算報價
     quote = build_quote_from_session(session)
 
     # 報價明細 rows
@@ -1887,6 +1891,17 @@ def send_order_confirm(reply_token, session):
                  "flex": 5, "color": "#E05C00", "size": "lg", "align": "end", "wrap": True}
             ]
         })
+
+    # 電子發票資訊字串
+    inv_type = session.get('invoice_type', '')
+    if inv_type == 'company':
+        inv_text = f"公司抬頭：{session.get('invoice_company_name', '')}（統編 {session.get('invoice_tax_id', '')}）"
+    elif inv_type == 'personal' and session.get('invoice_carrier'):
+        inv_text = f"手機載具：{session.get('invoice_carrier', '')}"
+    elif inv_type == 'personal':
+        inv_text = "個人雲端發票"
+    else:
+        inv_text = "不需要"
 
     # 行程資料 rows
     body_rows = [
@@ -1909,9 +1924,12 @@ def send_order_confirm(reply_token, session):
         make_info_row("航班", session.get('flight', '') or '無'),
         make_info_row("加購", '、'.join(extras) if extras else '無'),
         make_info_row("備註", session.get('note', '') or '無'),
+        make_info_row("電子發票", inv_text),
     ]
 
-    # 兩個 bubble：1. 報價 2. 確認資料
+    # ── 新功能 3：尾款金額 ──
+    balance = max(0, quote['total'] - NEWEBPAY_DEPOSIT)
+
     quote_bubble = {
         "type": "bubble",
         "header": {"type": "box", "layout": "vertical", "backgroundColor": "#1A2B4A",
@@ -1929,7 +1947,12 @@ def send_order_confirm(reply_token, session):
         "header": header_box("確認預約資料"),
         "body": {"type": "box", "layout": "vertical", "contents": body_rows + [
             {"type": "separator", "margin": "md"},
-            {"type": "text", "text": "確認以上資料無誤後送出預約", "margin": "md", "color": "#E05C00", "weight": "bold", "size": "sm", "wrap": True}
+            {"type": "text", "text": "確認以上資料無誤後送出預約", "margin": "md",
+             "color": "#E05C00", "weight": "bold", "size": "sm", "wrap": True},
+            {"type": "separator", "margin": "sm"},
+            {"type": "text",
+             "text": f"尾款 NT${balance:,} 元（未稅）請交付給司機",
+             "margin": "sm", "color": "#C53030", "weight": "bold", "size": "md", "wrap": True},
         ]},
         "footer": {"type": "box", "layout": "horizontal", "contents": [
             {"type": "button", "action": {"type": "postback", "label": "確認送出", "data": "confirm_order"},
@@ -1940,10 +1963,7 @@ def send_order_confirm(reply_token, session):
         ]}
     }
 
-    carousel = {
-        "type": "carousel",
-        "contents": [quote_bubble, confirm_bubble]
-    }
+    carousel = {"type": "carousel", "contents": [quote_bubble, confirm_bubble]}
     with ApiClient(configuration) as api_client:
         MessagingApi(api_client).reply_message(
             ReplyMessageRequest(reply_token=reply_token,
@@ -1951,20 +1971,32 @@ def send_order_confirm(reply_token, session):
         )
 
 def decode_session(encoded):
-    """從 base64 解碼 session 資料"""
     try:
         return json.loads(base64.b64decode(encoded.encode()).decode())
     except Exception:
         return None
 
 def encode_session(session):
-    """將 session 編碼為 base64 字串"""
     try:
         return base64.b64encode(json.dumps(session, ensure_ascii=False).encode()).decode()
     except Exception:
         return ''
 
 def save_order(reply_token, session, user_id):
+    # 組合發票備註
+    inv_type = session.get('invoice_type', '')
+    if inv_type == 'company':
+        inv_note = f"【發票】公司抬頭：{session.get('invoice_company_name','')}（統編 {session.get('invoice_tax_id','')}）"
+    elif inv_type == 'personal' and session.get('invoice_carrier'):
+        inv_note = f"【發票】手機載具：{session.get('invoice_carrier','')}"
+    elif inv_type == 'personal':
+        inv_note = "【發票】個人雲端發票"
+    else:
+        inv_note = ""
+
+    base_note = session.get('note', '') or ''
+    full_note = (base_note + '\n' + inv_note).strip() if inv_note else base_note
+
     with app.app_context():
         order = Order(
             line_user_id=user_id,
@@ -1986,16 +2018,15 @@ def save_order(reply_token, session, user_id):
             child_seat=session.get('child_seat', ''),
             child_seat_count=session.get('child_seat_count', 0),
             pet=session.get('pet', False),
-            note=session.get('note', ''),
+            note=full_note,
             extra_stops=json.dumps(session.get('extra_stops', []), ensure_ascii=False),
             extra_stop_fee=session.get('extra_stop_fee', 0),
-            status='待付款'   # 付款後才改為待確認
+            status='待付款'
         )
         db.session.add(order)
         db.session.commit()
         order_id = order.id
 
-        # 推播付款連結給客人
         base_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://airport-reservation.onrender.com')
         pay_url = f'{base_url}/pay/{order_id}'
 
@@ -2006,14 +2037,13 @@ def save_order(reply_token, session, user_id):
             {"type": "text", "text": f"訂單編號：#{order_id}", "size": "lg", "weight": "bold", "color": "#4A9B8F", "wrap": True},
             {"type": "text", "text": "請於 30 分鐘內完成定金支付（NT$315 含稅），訂單才會正式成立。", "margin": "md", "wrap": True},
             {"type": "separator", "margin": "md"},
-            {"type": "text", "text": f"定金金額：NT$315（含稅）", "margin": "md", "weight": "bold", "size": "md", "color": "#E05C00", "wrap": True},
+            {"type": "text", "text": "定金金額：NT$315（含稅）", "margin": "md", "weight": "bold", "size": "md", "color": "#E05C00", "wrap": True},
             {"type": "button", "action": {"type": "uri", "label": "立即支付定金 NT$315（含稅）", "uri": pay_url},
              "style": "primary", "color": "#4A9B8F", "margin": "md"},
         ]}
     }
     send_flex(reply_token, '請完成定金支付', bubble)
 
-    # 推播完整注意事項
     notice_text = (
         "📋 預約須知與注意事項\n"
         "━━━━━━━━━━━━━━━━\n\n"
@@ -2035,10 +2065,7 @@ def save_order(reply_token, session, user_id):
     try:
         with ApiClient(configuration) as api_client:
             MessagingApi(api_client).push_message(
-                PushMessageRequest(
-                    to=user_id,
-                    messages=[TextMessage(text=notice_text)]
-                )
+                PushMessageRequest(to=user_id, messages=[TextMessage(text=notice_text)])
             )
     except Exception as e:
         print(f'Notice push error: {e}')
@@ -2065,7 +2092,6 @@ def send_order_query_result(reply_token, orders):
     send_flex(reply_token, '訂單查詢結果', {"type": "carousel", "contents": bubbles})
 
 def notify_admin_grab(order, driver):
-    """搶單成功時推播通知後台管理員"""
     if not ADMIN_LINE_USER_ID:
         return
     try:
@@ -2087,13 +2113,12 @@ def notify_admin_grab(order, driver):
 
 
 def auto_dispatch_order(order_id):
-    """訂單確認後自動發布搶單（需在後台設定啟用）"""
     with app.app_context():
         order = Order.query.get(order_id)
         if not order:
             return
         if hasattr(order, 'dispatch_job') and order.dispatch_job:
-            return  # 已有搶單任務
+            return
         job = DispatchJob(order_id=order_id, status='開放搶單', notify_customer=True)
         db.session.add(job)
         db.session.commit()
@@ -2108,7 +2133,6 @@ def auto_dispatch_order(order_id):
 
 
 def handle_driver_grab(reply_token, driver_line_id, job_id):
-    """處理司機搶單邏輯"""
     with app.app_context():
         job = DispatchJob.query.get(job_id)
         if not job:
@@ -2121,12 +2145,10 @@ def handle_driver_grab(reply_token, driver_line_id, job_id):
         if not driver:
             reply_text(reply_token, '查無您的司機資料，請聯繫管理員。')
             return
-        # 已搶過了
         existing = DispatchResponse.query.filter_by(job_id=job_id, driver_id=driver.id).first()
         if existing:
             reply_text(reply_token, '您已回應過此訂單。')
             return
-        # 搶單成功：更新任務、訂單
         job.status = '已結單'
         job.grabbed_by = driver.id
         job.grabbed_at = datetime.utcnow()
@@ -2136,7 +2158,6 @@ def handle_driver_grab(reply_token, driver_line_id, job_id):
         db.session.add(DispatchResponse(job_id=job_id, driver_id=driver.id, action='搶單'))
         db.session.commit()
 
-        # 通知搶到的司機完整客戶資料
         bubble = {
             "type": "bubble",
             "header": {"type": "box", "layout": "vertical", "backgroundColor": "#4A9B8F",
@@ -2167,7 +2188,6 @@ def handle_driver_grab(reply_token, driver_line_id, job_id):
                 ReplyMessageRequest(reply_token=reply_token,
                     messages=[FlexMessage(alt_text='搶單成功！客戶資料如下', contents=FlexContainer.from_dict(bubble))])
             )
-        # 自動通知客人司機資料
         if job.notify_customer:
             try:
                 send_driver_info_to_customer(order, driver)
@@ -2176,7 +2196,6 @@ def handle_driver_grab(reply_token, driver_line_id, job_id):
             except Exception as e:
                 print(f'Auto notify customer error: {e}')
 
-        # 通知後台管理員
         notify_admin_grab(order, driver)
 
 # ── Start ─────────────────────────────────────────────────────────────
@@ -2191,7 +2210,6 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
 else:
-    # 在 gunicorn 下也啟動排程
     scheduler = BackgroundScheduler()
     scheduler.add_job(check_and_notify, 'interval', minutes=1)
     scheduler.start()
