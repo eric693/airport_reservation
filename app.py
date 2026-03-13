@@ -127,6 +127,7 @@ HUMAN_AGENT_LINE_ID = os.environ.get('HUMAN_AGENT_LINE_ID', 'rbf5256')  # 真人
 SUPPORT_GROUP_ID    = os.environ.get('SUPPORT_GROUP_ID', '')             # 客服群組 ID（推播真人客服通知用）
 AUTO_DISPATCH = os.environ.get('AUTO_DISPATCH', '0') == '1'
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
+AVIATIONSTACK_KEY   = os.environ.get('AVIATIONSTACK_API_KEY', '')  # AviationStack 航班查詢
 
 # ── 藍新金流設定（收款）────────────────────────────────────────────────
 NEWEBPAY_MERCHANT_ID  = os.environ.get('NEWEBPAY_MERCHANT_ID', '')   # MS3725965371（測試）
@@ -818,6 +819,69 @@ EXTRA_STOP_TIERS = [
     (999, 500),
 ]
 
+
+def query_flight_info(flight_number: str, date_str: str = '') -> dict | None:
+    """
+    呼叫 AviationStack 查詢航班資訊。
+    回傳 dict 或 None（查無 / API 未設定）。
+    回傳格式：
+    {
+        'flight':     'CI123',
+        'dep_airport': '桃園國際機場',
+        'arr_airport': '東京成田機場',
+        'dep_scheduled': '2025-06-15 08:30',
+        'arr_scheduled': '2025-06-15 12:45',
+        'status':     'scheduled',
+        'airline':    '中華航空',
+    }
+    """
+    if not AVIATIONSTACK_KEY or not flight_number:
+        return None
+    try:
+        # 清理航班號（去空格、全大寫）
+        fn = flight_number.strip().upper().replace(' ', '')
+        params = {
+            'access_key': AVIATIONSTACK_KEY,
+            'flight_iata': fn,
+            'limit': 1,
+        }
+        if date_str:
+            params['flight_date'] = date_str  # YYYY-MM-DD
+        resp = requests.get(
+            'http://api.aviationstack.com/v1/flights',
+            params=params, timeout=8
+        )
+        data = resp.json()
+        flights = data.get('data', [])
+        if not flights:
+            return None
+        f = flights[0]
+        dep = f.get('departure', {})
+        arr = f.get('arrival', {})
+
+        def fmt_time(t):
+            if not t:
+                return '未知'
+            try:
+                return datetime.fromisoformat(t[:16]).strftime('%Y-%m-%d %H:%M')
+            except Exception:
+                return t[:16]
+
+        return {
+            'flight':        fn,
+            'dep_airport':   dep.get('airport', '未知'),
+            'arr_airport':   arr.get('airport', '未知'),
+            'dep_scheduled': fmt_time(dep.get('scheduled')),
+            'arr_scheduled': fmt_time(arr.get('scheduled')),
+            'dep_terminal':  dep.get('terminal', ''),
+            'arr_terminal':  arr.get('terminal', ''),
+            'status':        f.get('flight_status', ''),
+            'airline':       (f.get('airline') or {}).get('name', ''),
+        }
+    except Exception as e:
+        app.logger.warning(f'query_flight_info error: {e}')
+        return None
+
 def get_distance_km(origin, destination):
     if not GOOGLE_MAPS_API_KEY:
         return None
@@ -1423,10 +1487,40 @@ def _handle_message_inner(event):
         reply_text(event.reply_token, '請輸入航班號碼（若無請輸入「無」）：')
 
     elif step == 'input_flight':
-        session['flight'] = '' if text == '無' else text
-        session['step'] = 'ask_child_seat'
-        user_sessions[user_id] = session
-        send_child_seat_menu(event.reply_token)
+        if text == '無':
+            session['flight'] = ''
+            session['step'] = 'ask_child_seat'
+            user_sessions[user_id] = session
+            send_child_seat_menu(event.reply_token)
+        else:
+            fn = text.strip().upper().replace(' ', '')
+            session['flight'] = fn
+            # 查詢航班資訊
+            finfo = query_flight_info(fn, session.get('date', ''))
+            if finfo:
+                session['flight_info'] = finfo
+                user_sessions[user_id] = session
+                send_flight_confirm(event.reply_token, fn, finfo)
+            else:
+                # 查無或 API 未設定 → 直接繼續
+                user_sessions[user_id] = session
+                if AVIATIONSTACK_KEY:
+                    reply_text(event.reply_token, f'查無航班「{fn}」的資訊，已記錄您輸入的號碼。')
+                session['step'] = 'ask_child_seat'
+                user_sessions[user_id] = session
+                send_child_seat_menu(event.reply_token)
+
+    elif step == 'confirm_flight':
+        # 客人確認或修改航班資訊後繼續
+        if text in ['確認', '對', 'yes', 'YES', 'Yes', '是']:
+            session['step'] = 'ask_child_seat'
+            user_sessions[user_id] = session
+            send_child_seat_menu(event.reply_token)
+        else:
+            # 重新輸入航班號
+            session['step'] = 'input_flight'
+            user_sessions[user_id] = session
+            reply_text(event.reply_token, '請重新輸入航班號碼：')
 
     elif step == 'input_child_seat_count':
         if text.isdigit() and 1 <= int(text) <= 2:
@@ -1774,6 +1868,60 @@ def send_airport_menu(reply_token):
         ] + buttons}
     }
     send_flex(reply_token, '選擇機場', bubble)
+
+
+def send_flight_confirm(reply_token, flight_number, finfo):
+    """顯示查到的航班資訊，讓客人確認"""
+    service_map = {
+        'scheduled':  '準時',
+        'active':     '飛行中',
+        'landed':     '已降落',
+        'cancelled':  '已取消',
+        'incident':   '異常',
+        'diverted':   '改降',
+    }
+    status_text = service_map.get(finfo.get('status',''), finfo.get('status',''))
+
+    dep_terminal = f"（航廈 {finfo['dep_terminal']}）" if finfo.get('dep_terminal') else ''
+    arr_terminal = f"（航廈 {finfo['arr_terminal']}）" if finfo.get('arr_terminal') else ''
+
+    bubble = {
+        "type": "bubble",
+        "header": {
+            "type": "box", "layout": "vertical", "backgroundColor": "#1A2B4A",
+            "contents": [
+                {"type": "text", "text": f"航班資訊確認", "color": "#FFFFFF", "size": "xl", "weight": "bold"},
+                {"type": "text", "text": f"{finfo.get('airline','')}  {flight_number}",
+                 "color": "#8BA3C7", "size": "sm", "wrap": True}
+            ]
+        },
+        "body": {
+            "type": "box", "layout": "vertical", "spacing": "sm",
+            "contents": [
+                make_info_row("出發機場", f"{finfo['dep_airport']}{dep_terminal}"),
+                make_info_row("出發時間", finfo['dep_scheduled']),
+                {"type": "separator", "margin": "sm"},
+                make_info_row("抵達機場", f"{finfo['arr_airport']}{arr_terminal}"),
+                make_info_row("抵達時間", finfo['arr_scheduled']),
+                {"type": "separator", "margin": "sm"},
+                make_info_row("航班狀態", status_text or '未知'),
+                {"type": "text", "text": "以上資訊是否正確？", "margin": "md",
+                 "weight": "bold", "color": "#E05C00", "size": "sm", "wrap": True},
+            ]
+        },
+        "footer": {
+            "type": "box", "layout": "horizontal", "spacing": "sm",
+            "contents": [
+                {"type": "button",
+                 "action": {"type": "message", "label": "正確，繼續", "text": "確認"},
+                 "style": "primary", "color": "#4A9B8F", "flex": 1},
+                {"type": "button",
+                 "action": {"type": "message", "label": "重新輸入", "text": "重填"},
+                 "style": "secondary", "flex": 1},
+            ]
+        }
+    }
+    send_flex(reply_token, f'航班資訊 {flight_number}', bubble)
 
 def send_child_seat_menu(reply_token):
     buttons = [make_button(name, f"child_seat_{key}") for key, name in CHILD_SEATS.items()]
