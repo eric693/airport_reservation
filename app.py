@@ -1554,29 +1554,40 @@ def _handle_message_inner(event):
         else:
             fn = text.strip().upper().replace(' ', '')
             session['flight'] = fn
-            # 查詢航班資訊
-            finfo = query_flight_info(fn, session.get('date', ''))
-            if finfo:
-                session['flight_info'] = finfo
-                user_sessions[user_id] = session
-                send_flight_confirm(event.reply_token, fn, finfo)
-            else:
-                # 查無或 API 未設定 → 直接繼續
+            if not AVIATION_EDGE_KEY:
                 session['step'] = 'ask_child_seat'
                 user_sessions[user_id] = session
-                if AVIATION_EDGE_KEY:
-                    # 用 push 通知查無（不佔 reply_token），再用 reply 送選單
-                    try:
-                        with ApiClient(configuration) as api_client:
-                            MessagingApi(api_client).push_message(
-                                PushMessageRequest(
-                                    to=user_id,
-                                    messages=[TextMessage(text=f'查無航班「{fn}」的時刻資訊，已記錄您輸入的號碼，繼續下一步。')]
-                                )
-                            )
-                    except Exception:
-                        pass
                 send_child_seat_menu(event.reply_token)
+            else:
+                # 先 reply 保住 token，查詢改用背景執行緒
+                reply_text(event.reply_token, '正在查詢航班資訊，請稍候...')
+                import threading
+                _sess = dict(session)
+                def _do_flight_query(uid=user_id, f=fn, s=_sess):
+                    try:
+                        finfo = query_flight_info(f, s.get('date', ''))
+                        if finfo:
+                            s['flight_info'] = finfo
+                            s['step'] = 'confirm_flight'
+                            user_sessions[uid] = s
+                            _push_flight_confirm(uid, f, finfo)
+                        else:
+                            s['step'] = 'ask_child_seat'
+                            user_sessions[uid] = s
+                            with ApiClient(configuration) as api_client:
+                                MessagingApi(api_client).push_message(
+                                    PushMessageRequest(
+                                        to=uid,
+                                        messages=[TextMessage(text='查無此航班資訊，已記錄號碼，繼續下一步：')]
+                                    )
+                                )
+                            _push_child_seat_menu(uid)
+                    except Exception as e:
+                        app.logger.error(f'flight query thread error: {e}')
+                        s['step'] = 'ask_child_seat'
+                        user_sessions[uid] = s
+                        _push_child_seat_menu(uid)
+                threading.Thread(target=_do_flight_query, daemon=True).start()
 
     elif step == 'confirm_flight':
         # 客人確認或修改航班資訊後繼續
