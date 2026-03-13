@@ -1645,7 +1645,7 @@ def send_invoice_menu(reply_token):
                 {"type": "separator", "margin": "md"},
                 make_button("個人載具（手機條碼）", "invoice_personal"),
                 make_button("公司抬頭（統一編號）", "invoice_company"),
-                make_button("不需要 / 稍後再說", "invoice_none"),
+                make_button("不需要發票", "invoice_none"),
             ]
         }
     }
