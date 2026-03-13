@@ -2309,16 +2309,30 @@ def send_invoice_menu(reply_token):
     }
     send_flex(reply_token, '電子發票', bubble)
 
+# ── 機場名稱 → 地址對照表（供 Google Maps 使用）──
+AIRPORT_ADDRESS_MAP = {
+    '桃園機場第一航廈': '桃園國際機場第一航廈, 大園區, 桃園市',
+    '桃園機場第二航廈': '桃園國際機場第二航廈, 大園區, 桃園市',
+    '松山機場':         '台北松山機場, 敦化北路, 台北市',
+    '台中清泉崗機場':   '台中國際機場, 清水區, 台中市',
+    '高雄小港機場':     '高雄國際機場, 小港區, 高雄市',
+    '基隆港':           '基隆港, 中正區, 基隆市',
+}
+
 # ── 新功能 2：預估車程（push，不佔 reply_token）──────────────────────
 def _push_est_travel(user_id, session):
     """呼叫 Google Maps 預估機場→目的地車程，用 push_message 傳給客人"""
     try:
-        airport = session.get('airport', '')
-        pickup  = session.get('pickup', '')
-        if not airport or not pickup or not GOOGLE_MAPS_API_KEY:
+        airport_name = session.get('airport', '')
+        pickup       = session.get('pickup', '')
+        app.logger.info(f'_push_est_travel: airport={airport_name!r}, pickup={pickup!r}, key={bool(GOOGLE_MAPS_API_KEY)}')
+        if not airport_name or not pickup or not GOOGLE_MAPS_API_KEY:
+            app.logger.warning(f'_push_est_travel: 缺少必要參數，略過')
             return
+        # 用地址查詢，避免中文名稱解析失敗
+        airport_addr = AIRPORT_ADDRESS_MAP.get(airport_name, airport_name)
         params = {
-            'origins':      airport,
+            'origins':      airport_addr,
             'destinations': pickup,
             'key':          GOOGLE_MAPS_API_KEY,
             'language':     'zh-TW',
@@ -2327,14 +2341,17 @@ def _push_est_travel(user_id, session):
         }
         resp = requests.get(
             'https://maps.googleapis.com/maps/api/distancematrix/json',
-            params=params, timeout=5
+            params=params, timeout=8
         )
-        element = resp.json()['rows'][0]['elements'][0]
+        result = resp.json()
+        app.logger.info(f'_push_est_travel Google Maps result: {result}')
+        element = result['rows'][0]['elements'][0]
         if element.get('status') != 'OK':
+            app.logger.warning(f'_push_est_travel: element status={element.get("status")}，略過')
             return
         dist_text = element['distance']['text']
         dur_text  = element['duration']['text']
-        msg = f"預估車程（{airport} → {pickup}）\n距離：{dist_text}\n行車時間：{dur_text}"
+        msg = f"預估車程（{airport_name} → {pickup}）\n距離：{dist_text}\n行車時間：{dur_text}"
         line_user_id = session.get('_line_user_id', user_id)
         with ApiClient(configuration) as api_client:
             MessagingApi(api_client).push_message(
@@ -2343,8 +2360,9 @@ def _push_est_travel(user_id, session):
                     messages=[TextMessage(text=msg)]
                 )
             )
+        app.logger.info(f'_push_est_travel: 推送成功 → {line_user_id}')
     except Exception as e:
-        app.logger.warning(f'_push_est_travel error: {e}')
+        app.logger.warning(f'_push_est_travel error: {e}', exc_info=True)
 
 # ── OpenAI AI 客服 ────────────────────────────────────────────────────
 AI_SYSTEM_PROMPT = """你是「機場接送服務」的親切客服助理，名字叫「小飛」。
