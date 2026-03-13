@@ -827,7 +827,10 @@ def query_flight_info(flight_number: str, date_str: str = '') -> dict | None:
     策略：先查即時（flights），查無再查時刻表（timetable）。
     回傳統一格式 dict 或 None。
     """
-    if not AVIATION_EDGE_KEY or not flight_number:
+    # 每次動態讀取，避免啟動時尚未設定
+    api_key = os.environ.get('AVIATION_EDGE_KEY', '')
+    app.logger.info(f'query_flight_info: key={api_key[:8] if api_key else "未設定"!r}, fn={flight_number!r}')
+    if not api_key or not flight_number:
         return None
 
     fn = flight_number.strip().upper().replace(' ', '')
@@ -876,7 +879,7 @@ def query_flight_info(flight_number: str, date_str: str = '') -> dict | None:
         # ── 方法 1：即時追蹤（航班在空中時有效）──
         resp = requests.get(
             'https://aviation-edge.com/v2/public/flights',
-            params={'key': AVIATION_EDGE_KEY, 'flightIata': fn},
+            params={'key': api_key, 'flightIata': fn},
             timeout=8
         )
         data = resp.json()
@@ -913,7 +916,7 @@ def query_flight_info(flight_number: str, date_str: str = '') -> dict | None:
         resp = requests.get(
             'https://aviation-edge.com/v2/public/timetable',
             params={
-                'key':         AVIATION_EDGE_KEY,
+                'key':         api_key,
                 'flight_iata': fn,
                 'type':        'departure',
             },
@@ -927,7 +930,7 @@ def query_flight_info(flight_number: str, date_str: str = '') -> dict | None:
         resp = requests.get(
             'https://aviation-edge.com/v2/public/timetable',
             params={
-                'key':         AVIATION_EDGE_KEY,
+                'key':         api_key,
                 'flight_iata': fn,
                 'type':        'arrival',
             },
@@ -1302,6 +1305,61 @@ def admin_set_newebpay_mode():
         NEWEBPAY_MODE = mode
         flash(f'藍新金流已切換為：{"正式環境" if mode=="prod" else "測試環境"}')
     return redirect(url_for('admin_pricing'))
+
+
+@app.route('/admin/test_flight')
+@admin_required
+def admin_test_flight():
+    fn = request.args.get('fn', '').strip().upper().replace(' ', '')
+    result = {}
+    raw = {}
+    if fn and AVIATION_EDGE_KEY:
+        import requests as _req
+        # 測試 1: flights (即時)
+        try:
+            r = _req.get('https://aviation-edge.com/v2/public/flights',
+                params={'key': api_key, 'flightIata': fn}, timeout=10)
+            raw['flights'] = r.json()
+        except Exception as e:
+            raw['flights'] = str(e)
+        # 測試 2: timetable departure
+        try:
+            r = _req.get('https://aviation-edge.com/v2/public/timetable',
+                params={'key': AVIATION_EDGE_KEY, 'flight_iata': fn, 'type': 'departure'}, timeout=10)
+            raw['timetable_dep'] = r.json()
+        except Exception as e:
+            raw['timetable_dep'] = str(e)
+        # 測試 3: timetable arrival
+        try:
+            r = _req.get('https://aviation-edge.com/v2/public/timetable',
+                params={'key': AVIATION_EDGE_KEY, 'flight_iata': fn, 'type': 'arrival'}, timeout=10)
+            raw['timetable_arr'] = r.json()
+        except Exception as e:
+            raw['timetable_arr'] = str(e)
+        # 測試 4: 用 query_flight_info
+        result = query_flight_info(fn, '')
+
+    import json
+    raw_json = json.dumps(raw, ensure_ascii=False, indent=2)
+    result_json = json.dumps(result, ensure_ascii=False, indent=2) if result else 'None（查無）'
+
+    html = f"""<!DOCTYPE html><html><head>
+<meta charset="utf-8"><title>航班 API 測試</title>
+<style>body{{font-family:sans-serif;padding:20px;max-width:900px;margin:0 auto}}
+input{{padding:8px;font-size:16px;width:200px}}
+button{{padding:8px 16px;font-size:16px;background:#4A9B8F;color:#fff;border:none;border-radius:4px;cursor:pointer}}
+pre{{background:#1a1a1a;color:#0f0;padding:16px;border-radius:8px;overflow-x:auto;font-size:12px;white-space:pre-wrap}}
+h2{{color:#2D3748}}h3{{color:#4A9B8F}}</style>
+</head><body>
+<h2>Aviation Edge API 測試</h2>
+<form method="GET">
+  <input name="fn" value="{fn}" placeholder="航班號例如 BR0851">
+  <button type="submit">查詢</button>
+</form>
+{'<h3>✅ query_flight_info 結果：</h3><pre>' + result_json + '</pre>' if fn else ''}
+{'<h3>📡 原始 API 回傳：</h3><pre>' + raw_json + '</pre>' if fn else ''}
+</body></html>"""
+    return html
 
 @app.route('/admin/pricing/payment_methods', methods=['POST'])
 @admin_required
