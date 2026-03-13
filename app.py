@@ -848,7 +848,7 @@ def query_flight_info(flight_number: str, date_str: str = '') -> dict | None:
         if date_str:
             params['flight_date'] = date_str  # YYYY-MM-DD
         resp = requests.get(
-            'http://api.aviationstack.com/v1/flights',
+            'https://api.aviationstack.com/v1/flights',
             params=params, timeout=8
         )
         data = resp.json()
@@ -1503,11 +1503,20 @@ def _handle_message_inner(event):
                 send_flight_confirm(event.reply_token, fn, finfo)
             else:
                 # 查無或 API 未設定 → 直接繼續
-                user_sessions[user_id] = session
-                if AVIATIONSTACK_KEY:
-                    reply_text(event.reply_token, f'查無航班「{fn}」的資訊，已記錄您輸入的號碼。')
                 session['step'] = 'ask_child_seat'
                 user_sessions[user_id] = session
+                if AVIATIONSTACK_KEY:
+                    # 用 push 通知查無（不佔 reply_token），再用 reply 送選單
+                    try:
+                        with ApiClient(configuration) as api_client:
+                            MessagingApi(api_client).push_message(
+                                PushMessageRequest(
+                                    to=user_id,
+                                    messages=[TextMessage(text=f'查無航班「{fn}」的時刻資訊，已記錄您輸入的號碼，繼續下一步。')]
+                                )
+                            )
+                    except Exception:
+                        pass
                 send_child_seat_menu(event.reply_token)
 
     elif step == 'confirm_flight':
