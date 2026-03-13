@@ -61,10 +61,7 @@ with app.app_context():
         _conn.commit()
     if VehicleType.query.count() == 0:
         defaults = [
-            VehicleType(name='標準國產四座轎車', capacity=4, luggage_capacity=2, sort_order=1),
-            VehicleType(name='商務六座廂型車',   capacity=6, luggage_capacity=4, sort_order=2),
-            VehicleType(name='豪華七座SUV',      capacity=7, luggage_capacity=4, sort_order=3),
-            VehicleType(name='九座廂型車',       capacity=9, luggage_capacity=6, sort_order=4),
+            VehicleType(name='不指定車款', capacity=7, luggage_capacity=7, note='最多7人／最多標準29吋7件', sort_order=1),
         ]
         db.session.add_all(defaults)
         db.session.commit()
@@ -83,7 +80,7 @@ with app.app_context():
             PriceSurcharge(key='night',      name='夜間服務費（22:00-06:00）', amount=200),
             PriceSurcharge(key='sign_board', name='舉牌服務',                  amount=300),
             PriceSurcharge(key='child_seat', name='兒童安全座椅（每張）',      amount=200),
-            PriceSurcharge(key='pet',        name='寵物同行',                  amount=1100),
+            PriceSurcharge(key='pet',        name='寵物同行',                  amount=300),
             PriceSurcharge(key='extra_stop', name='多點加收（每點/5公里內）',  amount=200),
             PriceSurcharge(key='invoice',    name='開立發票加收',              amount=0, note='基本價5%'),
             PriceSurcharge(key='short_book', name='七天內預約加收',            amount=300),
@@ -748,14 +745,14 @@ def calculate_quote(order):
         booking = date.fromisoformat(order.booking_date)
         today = date.today()
         days_ahead = (booking - today).days
+        if days_ahead <= 7 and 'short_book' in surcharge_map:
+            amt = surcharge_map['short_book'].amount
+            result['surcharges'].append({'label': surcharge_map['short_book'].name, 'amount': amt})
+            result['breakdown'].append({'label': surcharge_map['short_book'].name, 'amount': amt})
         if days_ahead <= 3 and 'urgent' in surcharge_map:
             amt = surcharge_map['urgent'].amount
             result['surcharges'].append({'label': surcharge_map['urgent'].name, 'amount': amt})
             result['breakdown'].append({'label': surcharge_map['urgent'].name, 'amount': amt})
-        elif days_ahead <= 7 and 'short_book' in surcharge_map:
-            amt = surcharge_map['short_book'].amount
-            result['surcharges'].append({'label': surcharge_map['short_book'].name, 'amount': amt})
-            result['breakdown'].append({'label': surcharge_map['short_book'].name, 'amount': amt})
     except Exception:
         pass
 
@@ -777,12 +774,8 @@ def calculate_quote(order):
     return result
 
 
-def send_quote_to_customer(order):
-    """預約成功後推播報價給客人"""
-    quote = calculate_quote(order)
-    if quote['base_price'] == 0:
-        return  # 無報價規則，不推播
-
+def _send_quote_bubble(order, quote):
+    """實際組裝並發送報價 Flex 給客人"""
     rows = [make_info_row(item['label'], f"NT${item['amount']:,}") for item in quote['breakdown']]
     rows.append({"type": "separator", "margin": "md"})
     rows.append({
@@ -798,7 +791,6 @@ def send_quote_to_customer(order):
         "text": "以上為預估報價，實際費用以出發當日為準。如有疑問請聯繫客服。",
         "size": "xs", "color": "#A0AEC0", "margin": "md", "wrap": True
     })
-
     bubble = {
         "type": "bubble",
         "header": {"type": "box", "layout": "vertical", "backgroundColor": "#1A2B4A",
@@ -811,14 +803,62 @@ def send_quote_to_customer(order):
     }
     try:
         with ApiClient(configuration) as api_client:
-            MessagingApi(api_client).push_message(
-                PushMessageRequest(
-                    to=order.line_user_id,
-                    messages=[FlexMessage(alt_text='您的預約報價明細', contents=FlexContainer.from_dict(bubble))]
-                )
-            )
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.push_message(PushMessageRequest(
+                to=order.line_user_id,
+                messages=[FlexMessage(alt_text='預約報價明細', contents=FlexContainer.from_dict(bubble))]
+            ))
     except Exception as e:
-        print(f'Quote push error: {e}')
+        app.logger.error(f'send_quote_to_customer error: {e}')
+
+
+def send_quote_to_customer(order):
+    """預約成功後推播報價給客人
+
+    多點停靠邏輯：若最後停靠點能比對到區域規則，以該點基本價為主，不加多點費。
+    """
+    import json as _json
+    extra_stops = []
+    try:
+        extra_stops = _json.loads(order.extra_stops) if order.extra_stops else []
+    except Exception:
+        pass
+
+    if extra_stops:
+        last_stop = extra_stops[-1]
+        rules = PriceRule.query.filter_by(active=True).order_by(PriceRule.sort_order).all()
+        matched_rule = None
+        for rule in rules:
+            airport_match = not rule.airport_keyword or rule.airport_keyword in order.airport
+            region_match  = not rule.region_keyword or any(
+                kw.strip() in last_stop for kw in rule.region_keyword.split(',')
+            )
+            if airport_match and region_match:
+                matched_rule = rule
+                break
+
+        if matched_rule:
+            original_pickup = order.pickup_location
+            order.pickup_location = last_stop
+            order.extra_stop_fee  = 0
+            quote = calculate_quote(order)
+            order.pickup_location = original_pickup
+            if quote['breakdown']:
+                quote['breakdown'][0]['label'] = f'基本車資（{matched_rule.name}，途經 {original_pickup}）'
+            if quote['base_price'] == 0:
+                return
+            _send_quote_bubble(order, quote)
+            return
+
+    # 一般流程（無停靠點，或停靠點比對不到）
+    quote = calculate_quote(order)
+    if order.extra_stop_fee:
+        quote['breakdown'].append({'label': '多點加收', 'amount': order.extra_stop_fee})
+        quote['total'] += order.extra_stop_fee
+    if quote['base_price'] == 0:
+        return  # 無報價規則，不推播
+
+    _send_quote_bubble(order, quote)
 
 
 # ── Admin: Pricing ────────────────────────────────────────────────────
@@ -988,11 +1028,22 @@ def _handle_message_inner(event):
 
     elif step == 'input_date':
         try:
-            datetime.strptime(text, '%Y-%m-%d')
-            session['date'] = text
-            session['step'] = 'input_time'
-            user_sessions[user_id] = session
-            reply_text(event.reply_token, '請輸入接送時間（格式：08:30）：\n\n注意：22:00～06:00 為夜間時段，需加收 NT$200 夜間服務費。')
+            from datetime import date as _date
+            dt = datetime.strptime(text, '%Y-%m-%d')
+            days_ahead = (dt.date() - _date.today()).days
+            if days_ahead < 0:
+                reply_text(event.reply_token, '日期已過期，請重新輸入，例如：' + datetime.now().strftime('%Y-%m-%d'))
+            elif days_ahead < 8:
+                reply_text(event.reply_token,
+                    f'⚠️ 線上預約系統僅開放 8 天後以上的日期。\n\n'
+                    f'7 天內預約請直接聯繫客服，由真人為您服務，謝謝！\n\n'
+                    f'請重新輸入 8 天後的日期（格式：{datetime.now().strftime("%Y-%m-%d")}）：'
+                )
+            else:
+                session['date'] = text
+                session['step'] = 'input_time'
+                user_sessions[user_id] = session
+                reply_text(event.reply_token, '請輸入接送時間（格式：08:30）：\n\n注意：22:00～06:00 為夜間時段，目前不指定優惠方案不加收費用。')
         except ValueError:
             reply_text(event.reply_token, '日期格式錯誤，請重新輸入，例如：2025-06-15')
 
@@ -1003,8 +1054,8 @@ def _handle_message_inner(event):
             session['night_fee'] = is_night_time(text)
             session['step'] = 'input_passengers'
             user_sessions[user_id] = session
-            night_msg = '\n（夜間時段，將加收 NT$200）' if session['night_fee'] else ''
-            reply_text(event.reply_token, f'已記錄時間：{text}{night_msg}\n\n請輸入乘客人數（數字）：')
+            night_msg = '' # 不指定優惠方案不加收夜間費
+            reply_text(event.reply_token, f'已記錄時間：{text}{night_msg}\n\n請輸入乘客人數，最多7人（數字）：')
         except ValueError:
             reply_text(event.reply_token, '時間格式錯誤，請重新輸入，例如：08:30')
 
@@ -1013,7 +1064,7 @@ def _handle_message_inner(event):
             session['passengers'] = text
             session['step'] = 'input_luggage'
             user_sessions[user_id] = session
-            reply_text(event.reply_token, '請輸入行李件數（數字）：')
+            reply_text(event.reply_token, '請輸入行李件數，最多7件（數字）：')
         else:
             reply_text(event.reply_token, '請輸入有效的乘客人數（1-20）：')
 
@@ -1060,7 +1111,7 @@ def _handle_message_inner(event):
             user_sessions[user_id] = session
             send_sign_board_menu(event.reply_token)
         else:
-            reply_text(event.reply_token, '每車最多 2 張，請輸入 1 或 2：')
+            reply_text(event.reply_token, '每座加收 NT$200，每車最多 2 座\n如需超過 2 座請聯繫客服\n請輸入需要幾座（1 或 2）：')
 
     elif step == 'input_note':
         session['note'] = '' if text == '無' else text
@@ -1169,7 +1220,7 @@ def _handle_postback_inner(event):
             session['child_seat'] = CHILD_SEATS.get(seat_key, '')
             session['step'] = 'input_child_seat_count'
             user_sessions[user_id] = session
-            reply_text(event.reply_token, f'已選擇：{session["child_seat"]}\n\n請輸入需要幾張安全座椅（最多 2 張）：')
+            reply_text(event.reply_token, f'已選擇：{session["child_seat"]}\n\n每座加收 NT$200，每車最多 2 座\n如需超過 2 座請聯繫客服\n請輸入需要幾座（1 或 2）：')
 
     elif data == 'sign_board_yes':
         session['sign_board'] = True
@@ -1184,12 +1235,12 @@ def _handle_postback_inner(event):
         send_pet_menu(event.reply_token)
 
     elif data == 'pet_yes':
-        if '九座' not in session.get('vehicle', ''):
-            session['vehicle'] = '九座廂型車'
+        if False:  # 不指定車款，無需升等
+            session['vehicle'] = '不指定車款'
         session['pet'] = True
         session['step'] = 'input_note'
         user_sessions[user_id] = session
-        reply_text(event.reply_token, '寵物同行加收：車型加價 NT$300 + 清潔費 NT$800 = NT$1,100\n（已自動調整為九座廂型車）\n\n請輸入備註事項（若無請輸入「無」）：')
+        reply_text(event.reply_token, '寵物同行加收：車型加價 NT$300 + 清潔費 NT$800 = NT$1,100\n\n\n請輸入備註事項（若無請輸入「無」）：')
 
     elif data == 'pet_no':
         session['pet'] = False
@@ -1310,7 +1361,7 @@ def send_child_seat_menu(reply_token):
         "header": header_box("兒童安全座椅"),
         "body": {"type": "box", "layout": "vertical", "contents": [
             {"type": "text", "text": "是否需要兒童安全座椅？", "size": "md", "color": "#333333"},
-            {"type": "text", "text": "每張加收 NT$100，每車最多 2 張", "size": "xs", "color": "#E05C00", "margin": "sm"},
+            {"type": "text", "text": "每座加收 NT$200，每車最多 2 座，超過請聯繫客服", "size": "xs", "color": "#E05C00", "margin": "sm"},
         ] + buttons}
     }
     send_flex(reply_token, '兒童安全座椅', bubble)
@@ -1321,8 +1372,8 @@ def send_sign_board_menu(reply_token):
         "header": header_box("舉牌服務"),
         "body": {"type": "box", "layout": "vertical", "contents": [
             {"type": "text", "text": "是否需要舉牌服務？", "size": "md", "color": "#333333"},
-            {"type": "text", "text": "司機於接機出口舉名牌等候，加收 NT$200", "size": "xs", "color": "#888888", "margin": "sm"},
-            make_button("需要舉牌（+NT$200）", "sign_board_yes"),
+            {"type": "text", "text": "舉牌人員於接機大廳舉名牌等候，加收 NT$300", "size": "xs", "color": "#888888", "margin": "sm"},
+            make_button("需要舉牌（+NT$300）", "sign_board_yes"),
             make_button("不需要", "sign_board_no"),
         ]}
     }
@@ -1334,8 +1385,8 @@ def send_pet_menu(reply_token):
         "header": header_box("寵物同行"),
         "body": {"type": "box", "layout": "vertical", "contents": [
             {"type": "text", "text": "是否有寵物同行？", "size": "md", "color": "#333333"},
-            {"type": "text", "text": "需指定九座車，加收車型費 NT$300 + 清潔費 NT$800", "size": "xs", "color": "#888888", "margin": "sm"},
-            make_button("有寵物同行（+NT$1,100）", "pet_yes"),
+            {"type": "text", "text": "必須裝籠，行車中不可放出！加收 NT$300", "size": "xs", "color": "#888888", "margin": "sm", "wrap": True},
+            make_button("有寵物同行（+NT$300）", "pet_yes"),
             make_button("沒有", "pet_no"),
         ]}
     }
@@ -1358,17 +1409,80 @@ AI_SYSTEM_PROMPT = """你是「機場接送服務」的親切客服助理，名�
 - 夜間費（22:00–06:00）：+NT$200
 - 舉牌服務：+NT$300
 - 兒童安全座椅：+NT$200 / 張（最多2張）
-- 寵物同行：+NT$1,100（自動升等九座廂型車）
-- 七天內預約：+NT$300
-- 三天內臨時單：+NT$300
+- 寵物同行：+NT$300（必須裝籠，行車中不可放出）
+- 七天內預約（需真人客服接單）：+NT$300
+- 三天內臨時單（疊加）：再+NT$300（合計+NT$600）
 - 假日/旺季期間：+NT$300
 - 多點停靠：依距離 +NT$200–500
 
-【車型】
-- 標準四座轎車：最多4人
-- 商務六座廂型車：最多6人
-- 豪華七座SUV：最多7人
-- 九座廂型車：最多9人
+【車型說明】
+我們採「不指定車款」優惠方案，一切依本公司調度派遣為主，以下為參考車款（全部為無菸車）：
+
+轎車類（最多 4 人）：
+- Lexus ES、Mercedes-Benz E-Class、Tesla Model S
+
+休旅車類（最多 5–7 人）：
+- Toyota RAV4、Luxgen N7、Mercedes-Benz EQB、Tesla Model Y、Tesla Model X
+
+廂型車類（最多 7–9 人）：
+- Toyota Sienna、Toyota Alphard、Lexus LM、KIA Carnival、Toyota Granvia
+- Volkswagen Caravelle T6、Hyundai Staria、Mercedes-Benz V-Class
+- Volkswagen Crafter、Mercedes-Benz Sprinter
+
+若被問到「不指定車款有哪些」，請列出以上車款並說明一切以本公司調度為主。
+
+【人數與行李超載說明】
+- 標準容量：最多 7 人、最多 7 件標準 29 吋行李，保證載得下。
+- 第 8 位乘客：加收 NT$400。
+- 若超過 7 人或 7 件，以該調度車款的後行李箱實際空間為準，超過載不下須自行負責。
+- 若被問到 8 位或以上費用，請說明加收 NT$400 並建議事先告知人數。
+
+【公司資訊】
+- 公司名稱：樂高小客車租賃有限公司（Le Gao Car Rental Co., Ltd.）
+- 統一編號：50978670
+- 汽車運輸業營業執照：交營字第40-0032736號
+- 新北市小客車租賃商業同業公會：新北小車證字第189號
+- 若客人詢問公司名稱、執照、統編等資訊，請如實回答以上內容。
+
+【接機流程（客人詢問時請回覆以下內容）】
+落地約 20 分鐘左右，司機會主動與您聯繫，請保持手機暢通。
+待您取好行李後，請主動撥電話給司機，司機會與您約定見面地點。
+若有任何問題請隨時聯繫客服。
+
+【常見問題 FAQ】
+
+Q1 機場接送要多久前預約？
+A：建議最晚兩周前先預約。線上預約系統僅開放 8 天後以上的日期，7 天內請直接聯繫真人客服接單。溫馨提醒：7 天內加收 NT$300，3 天內再加收 NT$300（合計 NT$600）。
+
+Q2 如果航班延誤怎麼辦？
+A：我們接機是依照航班實際落地為主等待 90 分鐘，不用擔心航班有提早或延誤問題。除非耽誤超過兩個小時，超過兩小時（第三小時起算）會加收 NT$300／每小時等待費用。
+
+Q3 半夜或清晨也可以叫車嗎？
+A：我們客服跟調度人員都是 24 小時服務，隨時可以跟我們叫車。
+
+Q4 車型可以選擇嗎？
+A：可以指定車型，您提供給我人數跟行李件數，好讓我報指定車款可以乘載的車款報價給您。
+
+Q5 行李有數量限制嗎？
+A：我們規定是七人七件標準式大行李絕對載得下，如有超過會依照該車款後行李箱載的下為主，如因超過載不下要自負。
+
+Q6 小孩需要安全座椅嗎？可以提供嗎？
+A：安全座椅／增高墊加收 NT$200／座，請提供幾歲用的。
+
+Q7 臨時更改或取消怎麼辦？
+A：七天以上異動都可以，七天內無法異動，七天內要取消恕不退還。
+
+Q8 費用如何計算？夜間會加價嗎？
+A：報價請提供地區來提供報價或參考我們報價參考值。目前優惠活動不加收夜間費用，如指定車款在 22:00–06:00 會加收 NT$300。7 天內預約加收 NT$300，3 天內再加收 NT$300（合計 NT$600）。
+
+Q9 請問公司在哪裡？
+A：公司註冊在新北市板橋，桃園跟台中都有辦公室，沒對外開放。
+
+Q10 請問司機從哪裡出發？是台中車嗎？是台北車嗎？
+A：我們司機有北部也有中部，司機有送就有接，不用擔心司機是哪裡的車，主要是可以服務好每一位貴賓，安全接送最重要。
+
+Q11 來回可以在優惠嗎？多叫一台有優惠嗎？
+A：目前已經是優惠活動，沒有再有任何優惠，回程還需要關注航班、等待航班、等待您出關接您，沒有加價已經是最大優惠了。
 
 【回覆原則】
 - 全程使用繁體中文
@@ -1421,8 +1535,9 @@ def send_main_menu(reply_token):
         "header": {
             "type": "box", "layout": "vertical", "backgroundColor": "#1A2B4A",
             "contents": [
-                {"type": "text", "text": "機場接送服務", "color": "#FFFFFF", "size": "xl", "weight": "bold"},
-                {"type": "text", "text": "您好！請問需要什麼服務？", "color": "#8BA3C7", "size": "sm", "margin": "sm"}
+                {"type": "text", "text": "Taiwan Top Service", "color": "#4A9B8F", "size": "sm", "weight": "bold"},
+                {"type": "text", "text": "機場接送服務", "color": "#FFFFFF", "size": "xxl", "weight": "bold", "margin": "xs"},
+                {"type": "text", "text": "您好！請問需要什麼服務？", "color": "#8BA3C7", "size": "sm", "margin": "sm", "wrap": True}
             ]
         },
         "body": {
@@ -1446,7 +1561,7 @@ def send_main_menu(reply_token):
             ]
         }
     }
-    send_flex(reply_token, '機場接送服務', bubble)
+    send_flex(reply_token, 'Taiwan Top Service 機場接送服務', bubble)
 
 def send_main_menu_after(reply_token, user_id=None):
     """送出主選單（用 reply_token）"""
@@ -1478,20 +1593,53 @@ def send_extra_stops_menu(reply_token):
 
 
 def build_quote_from_session(session):
-    """從 session 預先計算報價（訂單未儲存，用假 Order 物件）"""
+    """從 session 預先計算報價（訂單未儲存，用假 Order 物件）
+    
+    多點停靠邏輯：
+    - 若最後一個停靠點可以比對到區域規則 → 以該點為起算基本價，不加多點費
+    - 若比對不到 → 沿用出發地基本價，並加上多點距離加收費
+    """
     class FakeOrder:
         pass
     o = FakeOrder()
-    o.airport        = session.get('airport', '')
-    o.pickup_location= session.get('pickup', '')
-    o.night_fee      = session.get('night_fee', False)
-    o.sign_board     = session.get('sign_board', False)
+    o.airport          = session.get('airport', '')
+    o.pickup_location  = session.get('pickup', '')
+    o.night_fee        = session.get('night_fee', False)
+    o.sign_board       = session.get('sign_board', False)
     o.child_seat_count = session.get('child_seat_count', 0)
-    o.pet            = session.get('pet', False)
-    o.booking_date   = session.get('date', '')
-    o.extra_stop_fee = session.get('extra_stop_fee', 0)
+    o.pet              = session.get('pet', False)
+    o.booking_date     = session.get('date', '')
+    o.extra_stop_fee   = session.get('extra_stop_fee', 0)
+
+    extra_stops = session.get('extra_stops', [])
+
+    # 若有停靠點，嘗試以最後一個停靠點重新比對區域規則
+    if extra_stops:
+        last_stop = extra_stops[-1]
+        rules = PriceRule.query.filter_by(active=True).order_by(PriceRule.sort_order).all()
+        matched_rule = None
+        for rule in rules:
+            airport_match = not rule.airport_keyword or rule.airport_keyword in o.airport
+            region_match  = not rule.region_keyword or any(
+                kw.strip() in last_stop for kw in rule.region_keyword.split(',')
+            )
+            if airport_match and region_match:
+                matched_rule = rule
+                break
+
+        if matched_rule:
+            # 最後停靠點有對應區域規則 → 用新基本價，不加多點費
+            o.pickup_location = last_stop   # 讓 calculate_quote 用新地點比對
+            o.extra_stop_fee  = 0
+            quote = calculate_quote(o)
+            # 在說明裡標注實際出發地
+            origin = session.get('pickup', '')
+            if quote['breakdown']:
+                quote['breakdown'][0]['label'] = f'基本車資（{matched_rule.name}，途經 {origin}）'
+            return quote
+
+    # 無停靠點，或停靠點比對不到規則 → 原始邏輯：出發地基本價 + 多點加收
     quote = calculate_quote(o)
-    # 加入多點費用
     if o.extra_stop_fee:
         quote['surcharges'].append({'label': '多點加收', 'amount': o.extra_stop_fee})
         quote['breakdown'].append({'label': '多點加收', 'amount': o.extra_stop_fee})
@@ -1653,11 +1801,41 @@ def save_order(reply_token, session, user_id):
             {"type": "text", "text": "如需查詢訂單狀態，請輸入「查詢訂單」。", "margin": "sm", "size": "sm", "color": "#888888", "wrap": True},
             {"type": "separator", "margin": "md"},
             {"type": "text", "text": "注意事項", "margin": "md", "weight": "bold", "size": "sm"},
-            {"type": "text", "text": "• 請於出發日 48 小時前預約\n• 需變更請於 48 小時前來電\n• 車輛均投保 300 萬乘客險",
+            {"type": "text", "text": "• 接機依航班實際落地為主，等待 90 分鐘\n• 任何異動（含行李件數）請七天前告知\n• 七天內無法異動、取消，定金不退\n• 車輛均投保乘客險 500 萬元以上／每人",
              "size": "xs", "color": "#888888", "margin": "sm", "wrap": True}
         ]}
     }
     send_flex(reply_token, '預約成功', bubble)
+
+    # 推播完整注意事項
+    notice_text = (
+        "📋 預約須知與注意事項\n"
+        "━━━━━━━━━━━━━━━━\n\n"
+        "✈️【接機說明】\n"
+        "• 接機以航班實際落地時間為準，等待 90 分鐘。\n"
+        "• 取好行李後請主動聯繫司機，司機將告知見面地點與車牌。\n"
+        "• 若等候超過 90 分鐘未能聯繫，預約將自動取消並離開現場。\n\n"
+        "📦【行李說明】\n"
+        "• 超過 28 吋或大型行李箱、胖胖箱等非標準行李，請事先告知。\n"
+        "• 行李定義：行李箱、嬰兒車、登機箱、警衛包等占用後車廂空間之物件。\n"
+        "• 若到場後人數及行李與預約不符，司機有權拒絕載送，並不退費。\n\n"
+        "🔄【異動與取消】\n"
+        "• 任何異動（包含行李件數）請於七天前告知。\n"
+        "• 七天內任何理由均無法異動或取消，定金恕不退還。\n\n"
+        "🛡️【保險】\n"
+        "• 所有車輛均投保乘客險 500 萬元以上／每人。\n\n"
+        "如有任何問題，請隨時聯繫客服，感謝您的配合！🙏"
+    )
+    try:
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).push_message(
+                PushMessageRequest(
+                    to=user_id,
+                    messages=[TextMessage(text=notice_text)]
+                )
+            )
+    except Exception as e:
+        print(f'Notice push error: {e}')
 
 def send_order_query_result(reply_token, orders):
     bubbles = []
