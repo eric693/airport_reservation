@@ -1664,6 +1664,10 @@ def _handle_message_inner(event):
             else:
                 session['date'] = text
                 session['step'] = 'input_time'
+                # 若標記需要推車程，在問時間前先 push（不佔 reply token）
+                if session.pop('_push_travel_on_date', False):
+                    import threading
+                    threading.Thread(target=_push_est_travel, args=(user_id, dict(session)), daemon=True).start()
                 user_sessions[user_id] = session
                 svc = session.get('service', '')
                 if svc == 'arrival':
@@ -1871,11 +1875,10 @@ def _handle_message_inner(event):
             stop_num = len(session.get('extra_stops', [])) + 1
             reply_text(event.reply_token, f'請輸入第 {stop_num} 個停靠點地址：')
         else:
-            # 所有停靠點填完 → 推送預估車程（背景）再問日期
+            # 所有停靠點填完 → 標記需要推車程，問日期
             session['step'] = 'input_date'
+            session['_push_travel_on_date'] = True
             user_sessions[user_id] = session
-            import threading
-            threading.Thread(target=_push_est_travel, args=(user_id, dict(session)), daemon=True).start()
             reply_text(event.reply_token, '請輸入接送日期（格式：2025-06-15）：')
 
     else:
@@ -2050,11 +2053,10 @@ def _handle_postback_inner(event):
             reply_text(event.reply_token, '預約資料已逾時，請重新點選「開始預約」。')
             user_sessions.pop(user_id, None)
             return
-        # 所有地址確認完 → 推送預估車程（背景）再問日期
+        # 所有地址確認完 → 標記需要推車程，問日期
         session['step'] = 'input_date'
+        session['_push_travel_on_date'] = True   # 收到日期後再 push 車程
         user_sessions[user_id] = session
-        import threading
-        threading.Thread(target=_push_est_travel, args=(user_id, dict(session)), daemon=True).start()
         reply_text(event.reply_token, '請輸入接送日期（格式：2025-06-15）：')
 
     elif data == 'add_extra_stop':
