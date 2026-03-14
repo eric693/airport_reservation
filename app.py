@@ -145,10 +145,11 @@ EZPAY_HASH_IV     = os.environ.get('EZPAY_HASH_IV', '')
 EZPAY_MODE        = os.environ.get('EZPAY_MODE', 'test')  # 'test' or 'prod'
 
 # ── ezPay 電子發票設定 ────────────────────────────────────────────────
-EZPAY_MERCHANT_ID     = os.environ.get('EZPAY_MERCHANT_ID', '338919792')
-EZPAY_HASH_KEY        = os.environ.get('EZPAY_HASH_KEY', 'uXbTWrmBjLArC0Ln93CZEqC20eY5jBE0')
-EZPAY_HASH_IV         = os.environ.get('EZPAY_HASH_IV', 'PjvPgMj6OJppH8vC')
+EZPAY_MERCHANT_ID     = os.environ.get('EZPAY_MERCHANT_ID', '')
+EZPAY_HASH_KEY        = os.environ.get('EZPAY_HASH_KEY', '')   # ezPay 電子發票專用金鑰（非藍新）
+EZPAY_HASH_IV         = os.environ.get('EZPAY_HASH_IV', '')    # ezPay 電子發票專用 IV
 EZPAY_MODE            = os.environ.get('EZPAY_MODE', 'prod')           # test or prod
+DONATE_LOVE_CODE      = os.environ.get('DONATE_LOVE_CODE', '')         # 捐贈發票愛心碼（待填入）
 
 def newebpay_api_url():
     if NEWEBPAY_MODE == 'prod':
@@ -244,19 +245,30 @@ def issue_ezpay_invoice(order, invoice_type, carrier='', tax_id='', company_name
             carrier_type  = ''
             carrier_num   = ''
             print_flag    = '1'   # 紙本發票
+            love_code     = ''
         elif invoice_type == 'personal' and carrier:
             buyer_name    = order.name
             buyer_uni_no  = ''
             carrier_type  = '0'   # 手機條碼
             carrier_num   = carrier
             print_flag    = '0'
-        else:
-            # 不需要 or 個人雲端（無載具）
+            love_code     = ''
+        elif invoice_type == 'donate':
+            # 捐贈發票
             buyer_name    = order.name
             buyer_uni_no  = ''
             carrier_type  = ''
             carrier_num   = ''
             print_flag    = '0'
+            love_code     = DONATE_LOVE_CODE   # 愛心碼（待填入）
+        else:
+            # 個人雲端（無載具）
+            buyer_name    = order.name
+            buyer_uni_no  = ''
+            carrier_type  = ''
+            carrier_num   = ''
+            print_flag    = '0'
+            love_code     = ''
 
         # 稅額計算（含稅 315 元，稅率 5%）
         amt        = NEWEBPAY_DEPOSIT          # 315 含稅
@@ -290,6 +302,7 @@ def issue_ezpay_invoice(order, invoice_type, carrier='', tax_id='', company_name
             'ItemAmt':      amt_excl,
             'ItemTaxAmt':   tax_amt,
             'Comment':      '',
+            'LoveCode':     love_code if invoice_type == 'donate' else '',
         }
 
         post_data_str = urllib.parse.urlencode(params)
@@ -3020,8 +3033,10 @@ def send_order_confirm(reply_token, session):
         make_info_row("電子發票", inv_text),
     ]
 
-    # ── 新功能 3：尾款金額 ──
-    balance = max(0, quote['total'] - NEWEBPAY_DEPOSIT)
+    # ── 尾款金額：總價 - 定金未稅金額(NT$300) ──
+    # 定金 NT$315 含稅，未稅本金 NT$300，尾款以未稅計算交付司機現金
+    DEPOSIT_PRETAX = 300
+    balance = max(0, quote['total'] - DEPOSIT_PRETAX)
 
     quote_bubble = {
         "type": "bubble",
@@ -3044,7 +3059,7 @@ def send_order_confirm(reply_token, session):
              "color": "#E05C00", "weight": "bold", "size": "sm", "wrap": True},
             {"type": "separator", "margin": "sm"},
             {"type": "text",
-             "text": f"尾款 NT${balance:,} 元（未稅）請交付給司機",
+             "text": f"尾款 NT${balance:,} 元請交付現金給司機",
              "margin": "sm", "color": "#C53030", "weight": "bold", "size": "md", "wrap": True},
         ]},
         "footer": {"type": "box", "layout": "horizontal", "contents": [
