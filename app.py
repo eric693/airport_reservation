@@ -1077,7 +1077,7 @@ def push_dispatch_to_driver(driver, order, job):
                 make_info_row("接送地點", order.pickup_location),
                 make_info_row("日期時間", f"{order.booking_date} {order.booking_time}"),
                 make_info_row("乘客/行李", f"{order.passengers}人 / {order.luggage}件"),
-                make_info_row("客人姓名", (order.customer_name[0] + 'O' + order.customer_name[-1]) if order.customer_name and len(order.customer_name) >= 2 else '***'),
+                make_info_row("客人姓名", (order.name[0] + 'O' + order.name[-1]) if order.name and len(order.name) >= 2 else '***'),
                 *([{"type": "separator", "margin": "md"}]),
                 {"type": "separator", "margin": "sm"},
                 # 費用資訊
