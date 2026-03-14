@@ -125,7 +125,8 @@ handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
 ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin1234')
 ADMIN_LINE_USER_ID = os.environ.get('ADMIN_LINE_USER_ID', '')
-HUMAN_AGENT_LINE_ID = os.environ.get('HUMAN_AGENT_LINE_ID', 'rbf5256')  # 真人客服 LINE ID
+HUMAN_AGENT_LINE_ID = os.environ.get('HUMAN_AGENT_LINE_ID', 'rbf5256')
+DRIVER_GROUP_ID     = os.environ.get('DRIVER_GROUP_ID', '')           # 司機搶單群組 ID  # 真人客服 LINE ID
 SUPPORT_GROUP_ID    = os.environ.get('SUPPORT_GROUP_ID', '')             # 客服群組 ID（推播真人客服通知用）
 AUTO_DISPATCH = os.environ.get('AUTO_DISPATCH', '0') == '1'
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
@@ -149,7 +150,7 @@ EZPAY_MERCHANT_ID     = os.environ.get('EZPAY_MERCHANT_ID', '')
 EZPAY_HASH_KEY        = os.environ.get('EZPAY_HASH_KEY', '')   # ezPay 電子發票專用金鑰（非藍新）
 EZPAY_HASH_IV         = os.environ.get('EZPAY_HASH_IV', '')    # ezPay 電子發票專用 IV
 EZPAY_MODE            = os.environ.get('EZPAY_MODE', 'prod')           # test or prod
-DONATE_LOVE_CODE      = os.environ.get('DONATE_LOVE_CODE', '')         # 捐贈發票愛心碼（待填入）
+DONATE_LOVE_CODE      = os.environ.get('DONATE_LOVE_CODE', '024')      # 捐贈發票愛心碼（家扶基金會 024）
 
 def newebpay_api_url():
     if NEWEBPAY_MODE == 'prod':
@@ -959,6 +960,11 @@ def admin_create_dispatch(order_id):
             print(f'Dispatch push error driver {driver.id}: {e}')
     order.status = '搶單中'
     db.session.commit()
+    # 同時推播到司機群組
+    try:
+        push_dispatch_to_group(order, job)
+    except Exception as e:
+        app.logger.error(f'group dispatch error: {e}')
     flash(f'搶單任務已發布，共通知 {sent} 位司機')
     return redirect(url_for('admin_order_detail', order_id=order_id))
 
@@ -1006,6 +1012,11 @@ def admin_reopen_dispatch(job_id):
         except Exception as e:
             app.logger.error(f'reopen push error driver {driver.id}: {e}')
 
+    # 同時推播到司機群組
+    try:
+        push_dispatch_to_group(order, job)
+    except Exception as e:
+        app.logger.error(f'group reopen dispatch error: {e}')
     flash(f'搶單已重新開放，共通知 {sent} 位司機')
     return redirect(url_for('admin_order_detail', order_id=job.order_id))
 
@@ -1022,6 +1033,38 @@ def admin_cancel_dispatch(job_id):
 
 @app.route('/admin/dispatch')
 @admin_required
+
+def push_dispatch_to_group(order, job):
+    """推播搶單通知到司機群組"""
+    if not DRIVER_GROUP_ID:
+        return
+    try:
+        fee_line = ('車資：NT${:,}'.format(job.driver_fee)) if job.driver_fee else '車資：請洽調度'
+        msg = '\n'.join([
+            '【新訂單搶單】',
+            '訂單 #' + str(order.id),
+            '─────────────',
+            '服務：' + order.service_name,
+            '機場：' + order.airport,
+            '地點：' + _mask_address(order.pickup_location),
+            '日期：' + order.booking_date + ' ' + order.booking_time,
+            '乘客/行李：' + str(order.passengers) + '人 / ' + str(order.luggage) + '件',
+            '航班：' + (order.flight_number or '無'),
+            '─────────────',
+            fee_line,
+            '─────────────',
+            '請至 LINE Bot 私訊回覆：搶單' + str(order.id),
+        ])
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).push_message(
+                PushMessageRequest(
+                    to=DRIVER_GROUP_ID,
+                    messages=[TextMessage(text=msg)]
+                )
+            )
+    except Exception as e:
+        app.logger.error('push_dispatch_to_group error: ' + str(e))
+
 def admin_dispatch_list():
     sort      = request.args.get('sort', 'booking_date')
     dir_      = request.args.get('dir', 'asc')
@@ -2720,7 +2763,7 @@ def send_invoice_menu(reply_token):
                 {"type": "separator", "margin": "md"},
                 make_button("個人載具（手機條碼）", "invoice_personal"),
                 make_button("公司抬頭（統一編號）", "invoice_company"),
-                make_button("捐贈發票（愛心碼）", "invoice_donate"),
+                make_button("捐贈發票（家扶基金會 愛心碼 024）", "invoice_donate"),
             ]
         }
     }
