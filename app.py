@@ -1645,19 +1645,26 @@ def newebpay_notify():
         "我們將盡快與您確認訂單，感謝您的預約！\n\n"
         "預約須知與注意事項\n"
         "━━━━━━━━━━━━━━━━\n\n"
+        "【送機說明】\n"
+        "• 送機以預約時間為主，等待超過 16 分鐘起，加收 NT$800 元／每小時。\n\n"
         "【接機說明】\n"
         "• 接機以航班實際落地時間為準，等待 90 分鐘。\n"
+        "• 超過 91 分鐘起，加收 NT$800 元／每小時。\n"
+        "• 如航班延誤超過兩小時，第三個小時起加收 NT$300 元／每小時（依機場航班動態為準）。\n"
         "• 取好行李後請主動聯繫司機，司機將告知見面地點與車牌。\n"
         "• 若等候超過 90 分鐘未能聯繫，預約將自動取消並離開現場。\n\n"
         "【行李說明】\n"
-        "• 超過 28 吋或大型行李箱、胖胖箱等非標準行李，請事先告知。\n"
+        "• 超過 30 吋或大型行李箱、胖胖箱等非標準行李，請事先告知。\n"
         "• 行李定義：行李箱、嬰兒車、登機箱、警衛包等占用後車廂空間之物件。\n"
-        "• 若到場後人數及行李與預約不符，司機有權拒絕載送，並不退費。\n\n"
+        "• 若到場後人數及行李載不下時，司機有權拒絕載送，並不退費。\n\n"
         "【異動與取消】\n"
-        "• 任何異動（包含行李件數）請於七天前告知。\n"
+        "• 任何異動（包含行李件數）請於八天前告知。\n"
         "• 七天內任何理由均無法異動或取消，定金恕不退還。\n\n"
         "【保險】\n"
         "• 所有車輛均投保乘客險每人 500 萬元以上。\n\n"
+        "【特別提醒】\n"
+        "• 本公司車輛皆為合法合規營運，請配合服務流程。\n"
+        "• 若無法聯繫上司機與客服，請勿自行搭乘他車，我們無法對非本公司安排行為負責。\n\n"
         "如有任何問題，請隨時聯繫客服，感謝您的配合！"
     )
     try:
@@ -3283,19 +3290,26 @@ def save_order(reply_token, session, user_id):
     notice_text = (
         "預約須知與注意事項\n"
         "━━━━━━━━━━━━━━━━\n\n"
+        "【送機說明】\n"
+        "• 送機以預約時間為主，等待超過 16 分鐘起，加收 NT$800 元／每小時。\n\n"
         "【接機說明】\n"
         "• 接機以航班實際落地時間為準，等待 90 分鐘。\n"
+        "• 超過 91 分鐘起，加收 NT$800 元／每小時。\n"
+        "• 如航班延誤超過兩小時，第三個小時起加收 NT$300 元／每小時（依機場航班動態為準）。\n"
         "• 取好行李後請主動聯繫司機，司機將告知見面地點與車牌。\n"
         "• 若等候超過 90 分鐘未能聯繫，預約將自動取消並離開現場。\n\n"
         "【行李說明】\n"
-        "• 超過 28 吋或大型行李箱、胖胖箱等非標準行李，請事先告知。\n"
+        "• 超過 30 吋或大型行李箱、胖胖箱等非標準行李，請事先告知。\n"
         "• 行李定義：行李箱、嬰兒車、登機箱、警衛包等占用後車廂空間之物件。\n"
-        "• 若到場後人數及行李與預約不符，司機有權拒絕載送，並不退費。\n\n"
+        "• 若到場後人數及行李載不下時，司機有權拒絕載送，並不退費。\n\n"
         "【異動與取消】\n"
-        "• 任何異動（包含行李件數）請於七天前告知。\n"
+        "• 任何異動（包含行李件數）請於八天前告知。\n"
         "• 七天內任何理由均無法異動或取消，定金恕不退還。\n\n"
         "【保險】\n"
         "• 所有車輛均投保乘客險每人 500 萬元以上。\n\n"
+        "【特別提醒】\n"
+        "• 本公司車輛皆為合法合規營運，請配合服務流程。\n"
+        "• 若無法聯繫上司機與客服，請勿自行搭乘他車，我們無法對非本公司安排行為負責。\n\n"
         "如有任何問題，請隨時聯繫客服，感謝您的配合！"
     )
     try:
@@ -3405,7 +3419,7 @@ def handle_driver_grab(reply_token, driver_line_id, job_id):
                 "contents": [
                     {"type": "text", "text": "客戶完整資料", "weight": "bold", "color": "#1A2B4A", "margin": "sm", "wrap": True},
                     {"type": "separator", "margin": "sm"},
-                    make_info_row("姓名", order.name),
+                    make_info_row("姓名", (order.name[0] + "O" + order.name[-1]) if order.name and len(order.name) >= 2 else order.name),
                     make_info_row("電話", order.phone),
                     make_info_row("信箱", order.email or '無'),
                     make_info_row("航班", order.flight_number or '無'),
@@ -3423,18 +3437,9 @@ def handle_driver_grab(reply_token, driver_line_id, job_id):
                     *(
                         [
                             make_info_row("向客人收取", f"NT${order.total_price:,}" if order.total_price else "依報價單"),
-                            make_info_row("司機所得", f"NT${job.driver_fee:,}"),
-                            {"type": "box", "layout": "horizontal", "margin": "sm",
-                             "contents": [
-                                 {"type": "text", "text": "應回金金額", "size": "sm", "color": "#E05C00", "weight": "bold", "flex": 3},
-                                 {"type": "text",
-                                  "text": f"NT${max(0, (order.total_price or 0) - (job.driver_fee or 0)):,}",
-                                  "size": "lg", "color": "#C53030", "weight": "bold", "flex": 4, "align": "end"},
-                             ]},
-                            {"type": "text", "text": "收取費用 − 司機所得 = 回金金額",
-                             "size": "xs", "color": "#A0AEC0", "wrap": True, "margin": "xs"},
+                            make_info_row("司機車資", f"NT${job.driver_fee:,}"),
                         ] if job.driver_fee else [
-                            make_info_row("本單費用", "請洽調度確認"),
+                            make_info_row("車資", "請洽調度確認"),
                         ]
                     ),
                 ]}
