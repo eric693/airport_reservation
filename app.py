@@ -713,6 +713,36 @@ def admin_edit_order(order_id):
     return render_template('admin/order_edit.html',
         order=order, airports=airports, vehicles=vehicles, stops_text=stops_text)
 
+
+@app.route('/admin/order/<int:order_id>/message', methods=['POST'])
+@admin_required
+def admin_send_message(order_id):
+    """後台直接發 LINE 訊息給客人"""
+    order = Order.query.get_or_404(order_id)
+    msg = request.form.get('message', '').strip()
+    if not msg:
+        flash('訊息內容不能為空')
+        return redirect(url_for('admin_order_detail', order_id=order_id))
+
+    if not order.line_user_id or order.line_user_id == 'manual':
+        flash('此訂單為人工建立，無 LINE User ID，無法發送訊息')
+        return redirect(url_for('admin_order_detail', order_id=order_id))
+
+    try:
+        full_msg = f'【樂高客服】\n\n{msg}\n\n如有疑問請回覆此訊息，感謝您。'
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).push_message(
+                PushMessageRequest(
+                    to=order.line_user_id,
+                    messages=[TextMessage(text=full_msg)]
+                )
+            )
+        flash(f'✅ 訊息已成功發送給客人（訂單 #{order_id}）')
+    except Exception as e:
+        app.logger.error(f'admin_send_message error: {e}')
+        flash(f'❌ 發送失敗：{str(e)[:100]}')
+    return redirect(url_for('admin_order_detail', order_id=order_id))
+
 @app.route('/admin/order/<int:order_id>/status', methods=['POST'])
 @admin_required
 def admin_update_status(order_id):

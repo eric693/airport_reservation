@@ -257,6 +257,53 @@
         </div>
       </div>
 
+      <!-- 傳訊息給客人 -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">💬 傳訊息給客人</div></div>
+        {% if order.line_user_id and order.line_user_id != 'manual' %}
+        <div style="margin-bottom:12px">
+          <div style="font-size:12px;color:#718096;margin-bottom:6px">
+            客人 LINE ID：<code style="background:#EDF2F7;padding:2px 6px;border-radius:4px;font-size:11px">{{ order.line_user_id }}</code>
+          </div>
+        </div>
+        <!-- 快速訊息模板 -->
+        <div style="margin-bottom:12px">
+          <div style="font-size:11px;font-weight:600;color:#A0AEC0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">快速訊息</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <button type="button" class="btn btn-outline" style="font-size:12px;padding:5px 10px"
+              onclick="document.getElementById('msgInput').value='請問您的詳細接送地址是？（需含縣市、鄉鎮、路名、門號）'">
+              📍 補充地址
+            </button>
+            <button type="button" class="btn btn-outline" style="font-size:12px;padding:5px 10px"
+              onclick="document.getElementById('msgInput').value='請問您的航班號碼為何？（例：BR166、CI688）'">
+              ✈️ 補充航班
+            </button>
+            <button type="button" class="btn btn-outline" style="font-size:12px;padding:5px 10px"
+              onclick="document.getElementById('msgInput').value='您好，您的訂單 #{{ order.id }} 已確認，司機將準時為您服務，如有疑問請隨時聯繫我們。'">
+              ✅ 訂單確認
+            </button>
+            <button type="button" class="btn btn-outline" style="font-size:12px;padding:5px 10px"
+              onclick="document.getElementById('msgInput').value='請問您的乘客人數及行李件數是否正確？若有異動請告知我們。'">
+              👥 確認人數行李
+            </button>
+          </div>
+        </div>
+        <form method="POST" action="/admin/order/{{ order.id }}/message">
+          <textarea id="msgInput" name="message" rows="4"
+            style="width:100%;padding:10px;border:1px solid #E2E8F0;border-radius:8px;font-size:14px;resize:vertical;margin-bottom:10px"
+            placeholder="輸入要傳給客人的訊息...&#10;（系統會自動加上「【樂高客服】」前綴）"></textarea>
+          <button type="submit" class="btn btn-primary" style="width:100%">
+            📨 發送 LINE 訊息給客人
+          </button>
+        </form>
+        {% else %}
+        <div style="text-align:center;padding:20px;color:#A0AEC0;font-size:14px">
+          此訂單為人工建立，無 LINE User ID<br>
+          <span style="font-size:12px">請透過電話聯繫客人：{{ order.phone }}</span>
+        </div>
+        {% endif %}
+      </div>
+
       <!-- 搶單模組 -->
       <div class="card">
         <div class="card-header"><div class="card-title">搶單模組</div></div>
