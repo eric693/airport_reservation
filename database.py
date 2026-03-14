@@ -30,6 +30,7 @@ class Order(db.Model):
     note = db.Column(db.Text, default='')
     extra_stops = db.Column(db.Text, default='')      # 多點地址，JSON 陣列字串
     extra_stop_fee = db.Column(db.Integer, default=0)  # 多點加收費用
+    total_price = db.Column(db.Integer, default=0)        # 向客人收取總金額
     status = db.Column(db.String(20), default='待確認')
 
     # 司機指派
@@ -101,6 +102,7 @@ class DispatchJob(db.Model):
     grabbed_at = db.Column(db.DateTime, nullable=True)
     deadline = db.Column(db.DateTime, nullable=True)          # 搶單截止時間（可選）
     note = db.Column(db.String(200), default='')              # 後台備註
+    driver_fee = db.Column(db.Integer, nullable=True)             # 司機出車費用（NT$）
     notify_customer = db.Column(db.Boolean, default=True)     # 搶到後自動通知客人
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

@@ -136,6 +136,7 @@
     <div class="page-title">訂單 #{{ order.id }}</div>
     <div class="header-actions">
       <a href="/admin" class="btn btn-outline">返回列表</a>
+      <a href="/admin/order/{{ order.id }}/edit" class="btn btn-primary" style="background:#2B6CB0">✏️ 編輯訂單</a>
       <button class="btn btn-danger" onclick="document.getElementById('deleteModal').classList.add('show')">刪除訂單</button>
     </div>
   </div>
@@ -261,6 +262,12 @@
         <div class="card-header"><div class="card-title">搶單模組</div></div>
         <div class="card-body">
           {% if order.dispatch_job %}
+            {% if order.dispatch_job.driver_fee %}
+            <div style="background:#FFF8F0;border:1px solid #F6AD55;border-radius:8px;padding:12px;margin-bottom:12px;text-align:center">
+              <div style="font-size:11px;color:#C05621;font-weight:600;margin-bottom:4px">本單司機費用</div>
+              <div style="font-size:22px;font-weight:800;color:#E05C00">NT${{ "{:,}".format(order.dispatch_job.driver_fee) }}</div>
+            </div>
+            {% endif %}
             <div style="margin-bottom:12px">
               <div class="info-label">搶單狀態</div>
               <div style="margin-top:6px">
@@ -300,6 +307,12 @@
           {% else %}
             <div style="color:#A0AEC0;font-size:13px;margin-bottom:16px">尚未發布搶單任務</div>
             <form method="POST" action="/admin/order/{{ order.id }}/dispatch">
+              <label class="form-label">司機出車費用（NT$）</label>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+                <span style="font-size:14px;color:#4A9B8F;font-weight:700">NT$</span>
+                <input type="number" name="driver_fee" placeholder="例：2200" min="0" step="100"
+                  style="flex:1;font-size:16px;font-weight:700;color:#E05C00">
+              </div>
               <label class="form-label">搶單備註（顯示給司機）</label>
               <input type="text" name="dispatch_note" placeholder="例：需要大型行李廂、早班需準時" style="margin-bottom:12px">
               <label class="form-label">搶到後自動通知客人司機資料</label>
@@ -335,7 +348,7 @@
             {% if order.driver_notified %}
             司機資料已發送給客人
             {% else %}
-            預計於出發前 {{ order.notify_at or '2' }} 小時自動發送
+            預計於出發前 {{ order.notify_at or '48' }} 小時自動發送
             {% endif %}
           </div>
 
@@ -361,11 +374,12 @@
 
             <label class="form-label">發送時機</label>
             <select name="notify_at">
+              <option value="48" {% if order.notify_at == '48' or not order.notify_at %}selected{% endif %}>出發前 48 小時（預設）</option>
               <option value="24" {% if order.notify_at == '24' %}selected{% endif %}>出發前 24 小時</option>
               <option value="12" {% if order.notify_at == '12' %}selected{% endif %}>出發前 12 小時</option>
               <option value="6" {% if order.notify_at == '6' %}selected{% endif %}>出發前 6 小時</option>
               <option value="3" {% if order.notify_at == '3' %}selected{% endif %}>出發前 3 小時</option>
-              <option value="2" {% if order.notify_at == '2' or not order.notify_at %}selected{% endif %}>出發前 2 小時</option>
+              <option value="2" {% if order.notify_at == '2' %}selected{% endif %}>出發前 2 小時</option>
               <option value="1" {% if order.notify_at == '1' %}selected{% endif %}>出發前 1 小時</option>
             </select>
 

@@ -45,6 +45,8 @@ with app.app_context():
     _migrations = [
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS extra_stops TEXT DEFAULT ''",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS extra_stop_fee INTEGER DEFAULT 0",
+        "ALTER TABLE dispatch_jobs ADD COLUMN IF NOT EXISTS driver_fee INTEGER",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS total_price INTEGER DEFAULT 0",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS deposit_paid BOOLEAN DEFAULT FALSE",
         "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS line_user_id VARCHAR(100) DEFAULT ''",
         "ALTER TABLE dispatch_jobs ADD COLUMN IF NOT EXISTS deadline TIMESTAMP",
@@ -562,7 +564,7 @@ def admin_update_status(order_id):
 def admin_assign_driver(order_id):
     order = Order.query.get_or_404(order_id)
     driver_id = request.form.get('driver_id')
-    notify_at = request.form.get('notify_at', '2')
+    notify_at = request.form.get('notify_at', '48')
     order.driver_id = int(driver_id) if driver_id else None
     order.notify_at = notify_at
     order.driver_notified = False
@@ -793,6 +795,9 @@ def push_dispatch_to_driver(driver, order, job):
                 make_info_row("接送地點", order.pickup_location),
                 make_info_row("日期時間", f"{order.booking_date} {order.booking_time}"),
                 make_info_row("乘客/行李", f"{order.passengers}人 / {order.luggage}件"),
+                make_info_row("客人姓名", (order.customer_name[0] + 'O' + order.customer_name[-1]) if order.customer_name and len(order.customer_name) >= 2 else '***'),
+                *([{"type": "separator", "margin": "md"}]),
+                *([make_info_row("本單費用", f"NT${job.driver_fee:,}")] if job.driver_fee else [make_info_row("本單費用", "請洽調度確認")]),
                 make_info_row("航班", order.flight_number or '無'),
                 {"type": "separator", "margin": "md"},
                 *([make_info_row("備註", job.note)] if job.note else []),
@@ -3091,6 +3096,26 @@ def handle_driver_grab(reply_token, driver_line_id, job_id):
                     make_info_row("日期時間", f"{order.booking_date} {order.booking_time}"),
                     make_info_row("乘客/行李", f"{order.passengers}人 / {order.luggage}件"),
                     make_info_row("備註", order.note or '無'),
+                    {"type": "separator", "margin": "md"},
+                    {"type": "text", "text": "費用結算", "weight": "bold", "color": "#1A2B4A", "margin": "sm"},
+                    {"type": "separator", "margin": "sm"},
+                    *(
+                        [
+                            make_info_row("向客人收取", f"NT${order.total_price:,}" if order.total_price else "依報價單"),
+                            make_info_row("司機所得", f"NT${job.driver_fee:,}"),
+                            {"type": "box", "layout": "horizontal", "margin": "sm",
+                             "contents": [
+                                 {"type": "text", "text": "應回金金額", "size": "sm", "color": "#E05C00", "weight": "bold", "flex": 3},
+                                 {"type": "text",
+                                  "text": f"NT${max(0, (order.total_price or 0) - (job.driver_fee or 0)):,}",
+                                  "size": "lg", "color": "#C53030", "weight": "bold", "flex": 4, "align": "end"},
+                             ]},
+                            {"type": "text", "text": "收取費用 − 司機所得 = 回金金額",
+                             "size": "xs", "color": "#A0AEC0", "wrap": True, "margin": "xs"},
+                        ] if job.driver_fee else [
+                            make_info_row("本單費用", "請洽調度確認"),
+                        ]
+                    ),
                 ]}
         }
         with ApiClient(configuration) as api_client:
