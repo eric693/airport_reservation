@@ -1651,9 +1651,14 @@ def _handle_message_inner(event):
 
     elif step == 'input_pickup':
         session['pickup'] = text
-        session['step'] = 'input_date'
+        session['step'] = 'ask_extra_stops'
+        session['extra_stops'] = []
+        session['extra_stop_fee'] = 0
         user_sessions[user_id] = session
-        reply_text(event.reply_token, '請輸入接送日期（格式：2025-06-15）：')
+        # 推送預估車程（背景，不佔 reply_token）
+        import threading
+        threading.Thread(target=_push_est_travel, args=(user_id, dict(session)), daemon=True).start()
+        send_extra_stops_menu(event.reply_token)
 
     elif step == 'input_date':
         try:
@@ -1672,7 +1677,30 @@ def _handle_message_inner(event):
                 session['date'] = text
                 session['step'] = 'input_time'
                 user_sessions[user_id] = session
-                reply_text(event.reply_token, '請輸入接送時間（格式：08:30）：\n\n注意：22:00～06:00 為夜間時段，目前不指定優惠方案不加收費用。')
+                svc = session.get('service', '')
+                if svc == 'arrival':
+                    time_hint = (
+                        '請輸入航班預計抵達時間（24小時制，格式：08:30）：\n\n'
+                        '例：上午8點半 → 08:30\n'
+                        '    下午3點   → 15:00\n'
+                        '    晚上11點  → 23:00\n\n'
+                        '接機說明：\n'
+                        '我們以航班實際落地時間為主，\n'
+                        '於航班落地後等待最多 90 分鐘。'
+                    )
+                else:
+                    time_hint = (
+                        '請輸入從府上出發時間（24小時制，格式：08:30）：\n\n'
+                        '例：上午8點半 → 08:30\n'
+                        '    下午3點   → 15:00\n'
+                        '    晚上11點  → 23:00\n\n'
+                        '送機建議：\n'
+                        '建議航班起飛前 3 小時抵達機場，\n'
+                        '請依此預估您的出發時間。\n\n'
+                        '注意：22:00～06:00 為夜間時段，\n'
+                        '目前不指定優惠方案不加收費用。'
+                    )
+                reply_text(event.reply_token, time_hint)
         except ValueError:
             reply_text(event.reply_token, '日期格式錯誤，請重新輸入，例如：2025-06-15')
 
@@ -1802,12 +1830,9 @@ def _handle_message_inner(event):
     # ── 新功能：電子發票輸入步驟 ──
     elif step == 'input_carrier':
         session['invoice_carrier'] = '' if text == '無' else text.strip()
-        session['step'] = 'ask_extra_stops'
-        session['extra_stops'] = []
-        session['extra_stop_fee'] = 0
+        session['step'] = 'confirm'
         user_sessions[user_id] = session
-        _push_est_travel(user_id, session)
-        send_extra_stops_menu(event.reply_token)
+        send_order_confirm(event.reply_token, session)
 
     elif step == 'input_tax_id':
         tax_id = text.strip()
@@ -1821,12 +1846,9 @@ def _handle_message_inner(event):
 
     elif step == 'input_company_name':
         session['invoice_company_name'] = text.strip()
-        session['step'] = 'ask_extra_stops'
-        session['extra_stops'] = []
-        session['extra_stop_fee'] = 0
+        session['step'] = 'confirm'
         user_sessions[user_id] = session
-        _push_est_travel(user_id, session)
-        send_extra_stops_menu(event.reply_token)
+        send_order_confirm(event.reply_token, session)
 
     elif step == 'input_extra_stop':
         stop_addr = text.strip()
@@ -1857,9 +1879,10 @@ def _handle_message_inner(event):
             stop_num = len(session.get('extra_stops', [])) + 1
             reply_text(event.reply_token, f'請輸入第 {stop_num} 個停靠點地址：')
         else:
-            session['step'] = 'confirm'
+            # 停靠點填完 → 繼續問日期
+            session['step'] = 'input_date'
             user_sessions[user_id] = session
-            send_order_confirm(event.reply_token, session)
+            reply_text(event.reply_token, '請輸入接送日期（格式：2025-06-15）：')
 
     else:
         if OPENAI_API_KEY:
@@ -2023,25 +2046,20 @@ def _handle_postback_inner(event):
     elif data == 'invoice_none':
         session['invoice_type'] = ''
         session['invoice_carrier'] = ''
-        session['step'] = 'ask_extra_stops'
-        session['extra_stops'] = []
-        session['extra_stop_fee'] = 0
-        user_sessions[user_id] = session
-        _push_est_travel(user_id, session)
-        send_extra_stops_menu(event.reply_token)
-
-    # ── 多點停靠 ─────────────────────────────────────────────────────
-    elif data == 'no_extra_stops':
-        # 檢查 session 是否完整（避免空值導致 LINE API 400）
-        required = ['service_name', 'vehicle', 'airport', 'pickup', 'date', 'time', 'name', 'phone']
-        missing  = [k for k in required if not session.get(k, '').strip() if isinstance(session.get(k, ''), str)]
-        if missing or not session.get('service'):
-            reply_text(event.reply_token, '預約資料已逾時或遺失，請重新點選「開始預約」。')
-            user_sessions.pop(user_id, None)
-            return
         session['step'] = 'confirm'
         user_sessions[user_id] = session
         send_order_confirm(event.reply_token, session)
+
+    # ── 多點停靠 ─────────────────────────────────────────────────────
+    elif data == 'no_extra_stops':
+        if not session.get('pickup') or not session.get('service'):
+            reply_text(event.reply_token, '預約資料已逾時，請重新點選「開始預約」。')
+            user_sessions.pop(user_id, None)
+            return
+        # 停靠點確認完 → 繼續問日期
+        session['step'] = 'input_date'
+        user_sessions[user_id] = session
+        reply_text(event.reply_token, '請輸入接送日期（格式：2025-06-15）：')
 
     elif data == 'add_extra_stop':
         session['step'] = 'input_extra_stop'
