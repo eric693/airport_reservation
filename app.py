@@ -584,6 +584,122 @@ def admin_order_detail(order_id):
     drivers = Driver.query.filter_by(active=True).all()
     return render_template('admin/order_detail.html', order=order, drivers=drivers)
 
+
+@app.route('/admin/order/new', methods=['GET', 'POST'])
+@admin_required
+def admin_new_order():
+    """後台手動新增訂單（真人客服接單用）"""
+    airports = AirportOption.query.filter_by(active=True).all()
+    vehicles = VehicleType.query.filter_by(active=True).all()
+    if request.method == 'POST':
+        import json as _json
+        stops_raw = request.form.get('extra_stops', '')
+        stops = [s.strip() for s in stops_raw.splitlines() if s.strip()]
+        svc_name = request.form.get('service_name', '送機（出境）')
+        svc_type = 'arrival' if '接機' in svc_name else 'departure'
+        order = Order(
+            line_user_id   = request.form.get('line_user_id', 'manual'),
+            service_type   = svc_type,
+            service_name   = svc_name,
+            vehicle        = request.form.get('vehicle', '不指定車款'),
+            airport        = request.form.get('airport', ''),
+            pickup_location= request.form.get('pickup_location', ''),
+            booking_date   = request.form.get('booking_date', ''),
+            booking_time   = request.form.get('booking_time', ''),
+            passengers     = int(request.form.get('passengers') or 1),
+            luggage        = int(request.form.get('luggage') or 0),
+            name           = request.form.get('name', ''),
+            phone          = request.form.get('phone', ''),
+            email          = request.form.get('email', ''),
+            flight_number  = request.form.get('flight_number', ''),
+            note           = request.form.get('note', ''),
+            extra_stops    = _json.dumps(stops, ensure_ascii=False),
+            extra_stop_fee = int(request.form.get('extra_stop_fee') or 0),
+            total_price    = int(request.form.get('total_price') or 0),
+            status         = request.form.get('status', '待確認'),
+        )
+        db.session.add(order)
+        db.session.commit()
+        flash(f'訂單 #{order.id} 已手動建立')
+        return redirect(url_for('admin_order_detail', order_id=order.id))
+    return render_template('admin/order_edit.html',
+        order=None, airports=airports, vehicles=vehicles, stops_text='')
+
+
+@app.route('/admin/order/<int:order_id>/edit', methods=['GET', 'POST'])
+@admin_required
+def admin_edit_order(order_id):
+    order = Order.query.get_or_404(order_id)
+    airports = AirportOption.query.filter_by(active=True).all()
+    vehicles = VehicleType.query.filter_by(active=True).all()
+    if request.method == 'POST':
+        import json as _json
+        svc_name = request.form.get('service_name', order.service_name)
+        order.service_type   = 'arrival' if '接機' in svc_name else 'departure'
+        order.service_name   = svc_name
+        order.vehicle        = request.form.get('vehicle', order.vehicle)
+        order.airport        = request.form.get('airport', order.airport)
+        order.pickup_location= request.form.get('pickup_location', order.pickup_location)
+        order.booking_date   = request.form.get('booking_date', order.booking_date)
+        order.booking_time   = request.form.get('booking_time', order.booking_time)
+        order.passengers     = int(request.form.get('passengers') or order.passengers)
+        order.luggage        = int(request.form.get('luggage') or 0)
+        order.name           = request.form.get('name', order.name)
+        order.phone          = request.form.get('phone', order.phone)
+        order.email          = request.form.get('email', order.email)
+        order.flight_number  = request.form.get('flight_number', order.flight_number)
+        order.note           = request.form.get('note', order.note)
+        order.total_price    = int(request.form.get('total_price') or 0)
+        stops_raw = request.form.get('extra_stops', '')
+        stops = [s.strip() for s in stops_raw.splitlines() if s.strip()]
+        order.extra_stops    = _json.dumps(stops, ensure_ascii=False)
+        order.extra_stop_fee = int(request.form.get('extra_stop_fee') or 0)
+        db.session.commit()
+        # 若已指派司機，推送更新通知
+        if order.driver_id:
+            driver = Driver.query.get(order.driver_id)
+            if driver and driver.line_user_id:
+                try:
+                    stops_list = []
+                    try: stops_list = _json.loads(order.extra_stops or '[]')
+                    except: pass
+                    stops_text = '\n'.join([f'  停靠{i+1}：{s}' for i,s in enumerate(stops_list)])
+                    update_msg = (
+                        f'⚠️ 訂單 #{order.id} 資料已更新\n\n'
+                        f'日期時間：{order.booking_date} {order.booking_time}\n'
+                        f'接送地點：{order.pickup_location}\n'
+                        + (stops_text + '\n' if stops_text else '')
+                        + f'乘客/行李：{order.passengers}人 / {order.luggage}件\n'
+                        f'航班：{order.flight_number or "無"}\n'
+                        f'客人電話：{order.phone}\n'
+                        f'備註：{order.note or "無"}\n\n'
+                        f'請確認最新資料，如有疑問請聯繫調度。'
+                    )
+                    with ApiClient(configuration) as api_client:
+                        MessagingApi(api_client).push_message(
+                            PushMessageRequest(
+                                to=driver.line_user_id,
+                                messages=[TextMessage(text=update_msg)]
+                            )
+                        )
+                    flash(f'訂單已更新，已推送通知給司機 {driver.name}')
+                except Exception as e:
+                    app.logger.error(f'push driver update error: {e}')
+                    flash('訂單已更新，但推送司機通知失敗')
+            else:
+                flash('訂單已更新')
+        else:
+            flash('訂單已更新')
+        return redirect(url_for('admin_order_detail', order_id=order_id))
+
+    import json as _json
+    stops_list = []
+    try: stops_list = _json.loads(order.extra_stops or '[]')
+    except: pass
+    stops_text = '\n'.join(stops_list)
+    return render_template('admin/order_edit.html',
+        order=order, airports=airports, vehicles=vehicles, stops_text=stops_text)
+
 @app.route('/admin/order/<int:order_id>/status', methods=['POST'])
 @admin_required
 def admin_update_status(order_id):

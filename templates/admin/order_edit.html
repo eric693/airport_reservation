@@ -51,7 +51,7 @@
 <body>
 <div class="sidebar">
   <div class="sidebar-brand">樂高客服後台</div>
-  <a href="/admin/orders">訂單管理</a>
+  <a href="/admin">訂單管理</a>
   <a href="/admin/drivers">司機管理</a>
   <a href="/admin/pricing">報價設定</a>
   <a href="/admin/order/new">＋ 手動新增訂單</a>
@@ -60,7 +60,7 @@
 
 <div class="main">
   <div class="page-header">
-    <a href="{{ '/admin/order/' + order.id|string if order else '/admin/orders' }}" class="btn btn-secondary">← 返回</a>
+    <a href="{{ '/admin/order/' + order.id|string if order else '/admin' }}" class="btn btn-secondary">← 返回</a>
     <div>
       <div class="page-title">
         {% if order %}編輯訂單 #{{ order.id }}
@@ -200,7 +200,7 @@
     </div>
 
     <div style="display:flex; gap:12px; justify-content:flex-end; margin-top:8px">
-      <a href="{{ '/admin/order/' + order.id|string if order else '/admin/orders' }}" class="btn btn-secondary">取消</a>
+      <a href="{{ '/admin/order/' + order.id|string if order else '/admin' }}" class="btn btn-secondary">取消</a>
       <button type="submit" class="btn btn-primary">
         {{ '💾 儲存並通知司機' if (order and order.driver_id) else ('💾 儲存變更' if order else '＋ 建立訂單') }}
       </button>
