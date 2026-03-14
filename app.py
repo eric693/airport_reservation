@@ -1914,12 +1914,11 @@ def _handle_message_inner(event):
                 )
             else:
                 session['date'] = text
-                session['step'] = 'input_flight'
-                # 若標記需要推車程，在問航班號前先 push
+                session['step'] = 'input_time'
+                # 若標記需要推車程，在問時間前先 push（背景）
                 if session.pop('_push_travel_on_date', False):
                     import threading
                     threading.Thread(target=_push_est_travel, args=(user_id, dict(session)), daemon=True).start()
-                session.pop('_query_flight_after_date', None)  # 清除舊標記
                 user_sessions[user_id] = session
                 _reply_time_hint(event.reply_token, session)
         except ValueError:
@@ -1972,9 +1971,12 @@ def _handle_message_inner(event):
 
     elif step == 'input_email':
         session['email'] = '' if text == '無' else text
-        session['step'] = 'input_note'
+        session['step'] = 'input_flight'
         user_sessions[user_id] = session
-        reply_text(event.reply_token, '請輸入備註事項（若無請輸入「無」）：')
+        reply_text(event.reply_token,
+            '請輸入您的航班號碼：\n例：BR166、CI688、JX200\n\n'
+            '（航班號碼為必填，沒有航班號碼無法完成預約）'
+        )
 
     elif step == 'input_flight':
         fn = text.strip().upper().replace(' ', '')
@@ -1994,9 +1996,9 @@ def _handle_message_inner(event):
             fn_nz = _re2.sub(r'^([A-Z]{1,3})0+([0-9]+)$', r'\1\2', fn)
             if not AVIATION_EDGE_KEY:
                 # 無 API Key → 直接繼續
-                session['step'] = 'input_time'
+                session['step'] = 'input_note'
                 user_sessions[user_id] = session
-                _reply_time_hint(event.reply_token, session)
+                reply_text(event.reply_token, '請輸入備註事項（若無請輸入「無」）：')
             else:
                 # 有 API Key → reply「查詢中」，背景查詢
                 reply_text(event.reply_token, f'正在查詢 {fn} 的航班資訊，請稍候...')
@@ -2010,27 +2012,35 @@ def _handle_message_inner(event):
                             user_sessions[uid] = s
                             _push_flight_confirm(uid, f, finfo)
                         else:
-                            s['step'] = 'input_time'
+                            s['step'] = 'input_note'
                             user_sessions[uid] = s
                             with ApiClient(configuration) as api_client:
                                 MessagingApi(api_client).push_message(
                                     PushMessageRequest(to=uid,
-                                        messages=[TextMessage(text=f'查無 {f} 在 {d} 的航班資訊，已記錄號碼。')])
+                                        messages=[TextMessage(text=f'查無 {f} 在 {d} 的航班資訊，已記錄號碼，請繼續填寫備註。')])
                                 )
-                            _push_time_hint(uid, s)
+                            with ApiClient(configuration) as api_client:
+                                MessagingApi(api_client).push_message(
+                                    PushMessageRequest(to=uid,
+                                        messages=[TextMessage(text='請輸入備註事項（若無請輸入「無」）：')])
+                                )
                     except Exception as e:
                         app.logger.error(f'flight query error: {e}')
-                        s['step'] = 'input_time'
+                        s['step'] = 'input_note'
                         user_sessions[uid] = s
-                        _push_time_hint(uid, s)
+                        with ApiClient(configuration) as api_client:
+                            MessagingApi(api_client).push_message(
+                                PushMessageRequest(to=uid,
+                                    messages=[TextMessage(text='請輸入備註事項（若無請輸入「無」）：')])
+                            )
                 threading.Thread(target=_do_query, daemon=True).start()
 
 
     elif step == 'confirm_flight':
         if text in ['確認', '對', 'yes', 'YES', 'Yes', '是']:
-            session['step'] = 'input_time'
+            session['step'] = 'input_note'
             user_sessions[user_id] = session
-            _reply_time_hint(event.reply_token, session)
+            reply_text(event.reply_token, '請輸入備註事項（若無請輸入「無」）：')
         else:
             session['step'] = 'input_flight'
             user_sessions[user_id] = session
