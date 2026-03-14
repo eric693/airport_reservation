@@ -24,6 +24,8 @@
   .card { background: #FFFFFF; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); overflow: hidden; margin-bottom: 24px; }
   .card-header { padding: 16px 24px; border-bottom: 1px solid #EDF2F7; }
   .card-title { font-size: 15px; font-weight: 600; color: #1A2B4A; }
+  .sort-active  { color: #4A9B8F; }
+  .sort-inactive { color: #CBD5E0; }
   table { width: 100%; border-collapse: collapse; }
   th { padding: 12px 16px; text-align: left; font-size: 11px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; background: #F7FAFC; border-bottom: 1px solid #EDF2F7; }
   td { padding: 14px 16px; font-size: 13px; color: #2D3748; border-bottom: 1px solid #EDF2F7; vertical-align: middle; }
@@ -88,20 +90,39 @@
   </div>
 
   <div class="card">
-    <div class="card-header">
+    <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
       <div class="card-title">搶單任務記錄</div>
+      <form method="GET" action="/admin/dispatch" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select name="status" onchange="this.form.submit()" style="padding:6px 10px;border:1px solid #E2E8F0;border-radius:6px;font-size:13px">
+          <option value="">全部狀態</option>
+          <option value="開放搶單" {{ 'selected' if status_filter=='開放搶單' }}>開放搶單</option>
+          <option value="已結單"   {{ 'selected' if status_filter=='已結單' }}>已結單</option>
+          <option value="已取消"   {{ 'selected' if status_filter=='已取消' }}>已取消</option>
+        </select>
+        <input type="hidden" name="sort" value="{{ sort }}">
+        <input type="hidden" name="dir"  value="{{ dir }}">
+      </form>
     </div>
     {% if jobs %}
     <table>
       <thead>
+        {% macro sort_link(col, label) %}
+          {% set new_dir = 'desc' if (sort == col and dir == 'asc') else 'asc' %}
+          {% set arrow = '↑' if (sort == col and dir == 'asc') else ('↓' if (sort == col and dir == 'desc') else '↕') %}
+          <a href="/admin/dispatch?sort={{ col }}&dir={{ new_dir }}&status={{ status_filter }}"
+             style="color:inherit;text-decoration:none;display:flex;align-items:center;gap:4px">
+            {{ label }} <span class="{{ 'sort-active' if sort==col else 'sort-inactive' }}">{{ arrow }}</span>
+          </a>
+        {% endmacro %}
         <tr>
           <th>訂單</th>
           <th>客戶</th>
-          <th>接送資訊</th>
+          <th>{{ sort_link('booking_date', '預約日期') }}</th>
           <th>搶單狀態</th>
           <th>搶到的司機</th>
+          <th>司機費用</th>
           <th>回應人數</th>
-          <th>發布時間</th>
+          <th>{{ sort_link('created_at', '發布時間') }}</th>
           <th>操作</th>
         </tr>
       </thead>
@@ -128,6 +149,17 @@
             <div class="sub-text">{{ job.grabbed_at.strftime('%H:%M') if job.grabbed_at else '' }}</div>
             {% else %}
             <span class="sub-text">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if job.driver_fee %}
+              <span style="font-weight:700;color:#2D6A4F">NT${{ "{:,}".format(job.driver_fee) }}</span>
+              {% if job.order.total_price %}
+                <div class="sub-text">收 NT${{ "{:,}".format(job.order.total_price) }}</div>
+                <div class="sub-text" style="color:#C53030">回金 NT${{ "{:,}".format([0, job.order.total_price - job.driver_fee]|max) }}</div>
+              {% endif %}
+            {% else %}
+              <span style="color:#A0AEC0">未設定</span>
             {% endif %}
           </td>
           <td>

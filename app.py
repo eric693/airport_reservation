@@ -905,12 +905,18 @@ def admin_create_dispatch(order_id):
         flash('此訂單已有搶單任務')
         return redirect(url_for('admin_order_detail', order_id=order_id))
     from datetime import timezone
+    fee_raw = request.form.get('driver_fee', '')
     job = DispatchJob(
         order_id=order_id,
         status='開放搶單',
         note=request.form.get('dispatch_note', ''),
         notify_customer=request.form.get('notify_customer') == '1',
+        driver_fee=int(fee_raw) if fee_raw.strip().isdigit() else None,
     )
+    # 同步更新訂單的 total_price（若有填）
+    total_raw = request.form.get('total_price', '')
+    if total_raw.strip().isdigit():
+        order.total_price = int(total_raw)
     db.session.add(job)
     db.session.commit()
     drivers = Driver.query.filter(Driver.active == True, Driver.line_user_id != '').all()
@@ -940,8 +946,26 @@ def admin_cancel_dispatch(job_id):
 @app.route('/admin/dispatch')
 @admin_required
 def admin_dispatch_list():
-    jobs = DispatchJob.query.order_by(DispatchJob.created_at.desc()).all()
-    return render_template('admin/dispatch.html', jobs=jobs)
+    sort     = request.args.get('sort', 'booking_date')
+    dir_     = request.args.get('dir', 'asc')
+    status_f = request.args.get('status', '')
+
+    q = DispatchJob.query.join(Order)
+    if status_f:
+        q = q.filter(DispatchJob.status == status_f)
+
+    if sort == 'booking_date':
+        col = Order.booking_date
+    elif sort == 'created_at':
+        col = DispatchJob.created_at
+    else:
+        col = Order.booking_date
+
+    q = q.order_by(col.asc() if dir_ == 'asc' else col.desc(),
+                   Order.booking_time.asc())
+    jobs = q.all()
+    return render_template('admin/dispatch.html', jobs=jobs,
+                           sort=sort, dir=dir_, status_filter=status_f)
 
 def push_dispatch_to_driver(driver, order, job):
     bubble = {
