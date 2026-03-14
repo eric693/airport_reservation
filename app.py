@@ -1058,6 +1058,18 @@ def admin_dispatch_list():
                            date_from=date_from, date_to=date_to,
                            date_exact=date_exact, now=_dt.now())
 
+
+def _mask_address(addr):
+    """地址只顯示到路/街/段，隱藏門號、巷弄"""
+    if not addr:
+        return addr
+    import re as _re
+    # 保留到「X路X段」或「X路」為止（支援中文/數字段數）
+    m = _re.search(r'(.+?(?:路|街|大道)(?:[一二三四五六七八九十百0-9０-９]+段)?)', addr)
+    if m:
+        return m.group(1)
+    return addr
+
 def push_dispatch_to_driver(driver, order, job):
     bubble = {
         "type": "bubble",
@@ -1074,27 +1086,15 @@ def push_dispatch_to_driver(driver, order, job):
                 make_info_row("服務", order.service_name),
                 make_info_row("車型需求", order.vehicle),
                 make_info_row("機場", order.airport),
-                make_info_row("接送地點", order.pickup_location),
+                make_info_row("接送地點", _mask_address(order.pickup_location)),
                 make_info_row("日期時間", f"{order.booking_date} {order.booking_time}"),
                 make_info_row("乘客/行李", f"{order.passengers}人 / {order.luggage}件"),
-                make_info_row("客人姓名", (order.name[0] + 'O' + order.name[-1]) if order.name and len(order.name) >= 2 else '***'),
-                *([{"type": "separator", "margin": "md"}]),
                 {"type": "separator", "margin": "sm"},
                 # 費用資訊
                 *(
-                    [
-                        make_info_row("向客人收取", f"NT${order.total_price:,}" if order.total_price else "依報價單"),
-                        make_info_row("司機所得", f"NT${job.driver_fee:,}"),
-                        {"type": "box", "layout": "horizontal", "margin": "xs",
-                         "contents": [
-                             {"type": "text", "text": "回金金額", "size": "sm", "color": "#E05C00", "weight": "bold", "flex": 3},
-                             {"type": "text",
-                              "text": f"NT${max(0, (order.total_price or 0) - job.driver_fee):,}",
-                              "size": "md", "color": "#C53030", "weight": "bold", "flex": 4, "align": "end"},
-                         ]},
-                    ] if job.driver_fee else [
-                        make_info_row("本單費用", "請洽調度確認"),
-                    ]
+                    [make_info_row("車資", f"NT${job.driver_fee:,}")]
+                    if job.driver_fee else
+                    [make_info_row("車資", "請洽調度確認")]
                 ),
                 {"type": "separator", "margin": "sm"},
                 make_info_row("航班", order.flight_number or '無'),
