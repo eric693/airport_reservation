@@ -945,6 +945,52 @@ def query_flight_info(flight_number: str, date_str: str = '') -> dict | None:
         'LED':'聖彼得堡機場','ALA':'阿拉木圖機場','TAS':'塔什干機場',
     }
 
+    # 航空公司 IATA → 中文名稱對照
+    AIRLINE_NAMES = {
+        # 台灣
+        'BR':'長榮航空','CI':'中華航空','B7':'立榮航空','AE':'華信航空',
+        'IT':'台灣虎航','GE':'復興航空',
+        # 日本
+        'JL':'日本航空','NH':'全日空','JW':'香草航空','MM':'樂桃航空',
+        'GK':'捷星日本','7G':'星悅航空','NU':'日本越洋','BC':'天馬航空',
+        # 韓國
+        'KE':'大韓航空','OZ':'韓亞航空','7C':'濟州航空','LJ':'真航空',
+        'RS':'韓釜航空','ZE':'易斯達航空','TW':'德威航空','4V':'飛天航空',
+        # 中國
+        'CA':'中國國際航空','MU':'中國東方航空','CZ':'中國南方航空',
+        'HU':'海南航空','3U':'四川航空','ZH':'深圳航空','FM':'上海航空',
+        'KN':'中國聯合航空','8L':'祥鵬航空','9C':'春秋航空','GJ':'長龍航空',
+        # 香港/澳門
+        'CX':'國泰航空','HX':'香港航空','UO':'香港快運','NX':'澳門航空',
+        # 東南亞
+        'SQ':'新加坡航空','MI':'勝安航空','TR':'酷航','3K':'捷星亞洲',
+        'TZ':'酷航（舊）','TG':'泰國航空','FD':'泰亞洲航空','DD':'諾克航空',
+        'PG':'曼谷航空','QV':'老撾航空','VN':'越南航空','VJ':'越捷航空',
+        'BL':'太平洋航空','MH':'馬來西亞航空','AK':'亞洲航空','FY':'飛螢航空',
+        'OD':'馬印航空','GA':'鷹航印尼','JT':'獅子航空','QZ':'印尼亞航',
+        'PR':'菲律賓航空','5J':'宿霧太平洋航空','Z2':'菲律賓亞航',
+        # 中東
+        'EK':'阿聯酋航空','EY':'阿提哈德航空','QR':'卡達航空',
+        'GF':'海灣航空','KU':'科威特航空','WY':'阿曼航空',
+        # 歐美
+        'UA':'聯合航空','AA':'美國航空','DL':'達美航空','AS':'阿拉斯加航空',
+        'B6':'捷藍航空','WN':'西南航空','AC':'加拿大航空','WS':'西捷航空',
+        'BA':'英國航空','LH':'漢莎航空','AF':'法國航空','KL':'荷蘭皇家航空',
+        'LX':'瑞士航空','OS':'奧地利航空','SK':'北歐航空','AY':'芬蘭航空',
+        'IB':'伊比利亞航空','TP':'葡萄牙航空','AZ':'義大利航空',
+        'TK':'土耳其航空','RO':'羅馬尼亞航空',
+        # 大洋洲
+        'QF':'澳洲航空','JQ':'捷星航空','VA':'維珍澳洲','NZ':'紐西蘭航空',
+        # 其他
+        'FZ':'阿聯酋快運','WB':'盧安達航空','ET':'衣索比亞航空',
+        'JX':'星宇航空',
+    }
+
+    def airline_name_zh(code):
+        if not code:
+            return ''
+        return AIRLINE_NAMES.get(code.upper(), code)
+
     def iata_name(code):
         if not code:
             return '未知'
@@ -959,9 +1005,11 @@ def query_flight_info(flight_number: str, date_str: str = '') -> dict | None:
         arr_delay = arr.get('delay', 0) or 0
         dep_iata = dep.get('iataCode', '') or ''
         arr_iata = arr.get('iataCode', '') or ''
-        # 航空公司名稱：優先用 codeshared，再用 airline
-        airline_name = (airline.get('name') or airline.get('iataCode') or
-                        codeshared.get('airline', {}).get('name') or '')
+        # 航空公司名稱：優先用中文對照，再用英文名，最後用 iataCode
+        _iata = airline.get('iataCode', '') or ''
+        _name = airline.get('name', '') or ''
+        _cs_iata = (codeshared.get('airline', {}) or {}).get('iataCode', '') or ''
+        airline_name = (airline_name_zh(_iata) if _iata else '') or _name or airline_name_zh(_cs_iata) or _iata
         return {
             'flight':        fn,
             'airline':       airline_name,
@@ -1002,17 +1050,20 @@ def query_flight_info(flight_number: str, date_str: str = '') -> dict | None:
             arr = f.get('arrival',   {}) or {}
             airline = f.get('airline', {}) or {}
             geo = f.get('geography', {}) or {}
+            _live_iata = airline.get('iataCode', '') or ''
+            _dep_iata  = dep.get('iataCode', '') or ''
+            _arr_iata  = arr.get('iataCode', '') or ''
             return {
                 'flight':        fn,
-                'airline':       airline.get('iataCode', ''),
+                'airline':       airline_name_zh(_live_iata) or _live_iata,
                 'status':        f.get('status', ''),
-                'dep_airport':   dep.get('iataCode', '未知'),
-                'dep_iata':      dep.get('iataCode', ''),
+                'dep_airport':   iata_name(_dep_iata),
+                'dep_iata':      _dep_iata,
                 'dep_terminal':  '', 'dep_gate':      '',
                 'dep_scheduled': '', 'dep_estimated': '', 'dep_actual': '',
                 'dep_delay':     0,
-                'arr_airport':   arr.get('iataCode', '未知'),
-                'arr_iata':      arr.get('iataCode', ''),
+                'arr_airport':   iata_name(_arr_iata),
+                'arr_iata':      _arr_iata,
                 'arr_terminal':  '', 'arr_gate':      '', 'arr_baggage': '',
                 'arr_scheduled': '', 'arr_estimated': '', 'arr_actual': '',
                 'arr_delay':     0,
@@ -1023,35 +1074,44 @@ def query_flight_info(flight_number: str, date_str: str = '') -> dict | None:
         app.logger.warning(f'aviation_edge flights error: {e}')
 
     try:
-        # ── 方法 2：時刻表（timetable，起降前後最準確）──
-        # 用出發機場查詢，需先知道出發機場 IATA → 用 flight_iata 直接查
-        resp = requests.get(
-            'https://aviation-edge.com/v2/public/timetable',
-            params={
-                'key':         api_key,
-                'flight_iata': fn_no_zero,
-                'type':        'departure',
-            },
-            timeout=8
-        )
-        data = resp.json()
-        app.logger.info(f'aviation_edge timetable departure raw: {data[:1] if isinstance(data,list) else data}')
-        if isinstance(data, list) and data:
-            return parse_record(data[0])
+        # ── 方法 2：時刻表（timetable）──
+        # Aviation Edge timetable 支援用 date 參數過濾指定日期
+        timetable_params_base = {
+            'key':         api_key,
+            'flight_iata': fn_no_zero,
+        }
+        # 若有預約日期，加入 date 參數（格式 YYYY-MM-DD）
+        if date_str:
+            try:
+                # 驗證格式正確
+                datetime.strptime(date_str, '%Y-%m-%d')
+                timetable_params_base['date'] = date_str
+                app.logger.info(f'query_flight_info: 帶入預約日期 {date_str}')
+            except ValueError:
+                pass
 
-        # 試試 arrival
-        resp = requests.get(
-            'https://aviation-edge.com/v2/public/timetable',
-            params={
-                'key':         api_key,
-                'flight_iata': fn_no_zero,
-                'type':        'arrival',
-            },
-            timeout=8
-        )
-        data = resp.json()
-        if isinstance(data, list) and data:
-            return parse_record(data[0])
+        for t in ['departure', 'arrival']:
+            params = {**timetable_params_base, 'type': t}
+            resp = requests.get(
+                'https://aviation-edge.com/v2/public/timetable',
+                params=params,
+                timeout=8
+            )
+            data = resp.json()
+            app.logger.info(f'aviation_edge timetable {t} (date={date_str}): {data[:1] if isinstance(data,list) else data}')
+            if isinstance(data, list) and data:
+                # 若有多筆，找最接近預約日期的班次
+                if date_str and len(data) > 1:
+                    def score(f):
+                        dep = f.get('departure', {}) or {}
+                        arr = f.get('arrival', {}) or {}
+                        t_str = dep.get('scheduledTime') or arr.get('scheduledTime') or ''
+                        return t_str[:10] == date_str
+                    matched = [f for f in data if score(f)]
+                    record = matched[0] if matched else data[0]
+                else:
+                    record = data[0]
+                return parse_record(record)
 
     except Exception as e:
         app.logger.warning(f'aviation_edge timetable error: {e}')
@@ -1248,17 +1308,19 @@ def pay_deposit(order_id):
 
 @app.route('/newebpay/notify', methods=['POST'])
 def newebpay_notify():
+    app.logger.info(f'Newebpay notify received: form={dict(request.form)}')
     status         = request.form.get('Status')
     trade_info_enc = request.form.get('TradeInfo', '')
     trade_sha      = request.form.get('TradeSha', '')
 
     expected = newebpay_sha256(trade_info_enc)
+    app.logger.info(f'Newebpay TradeSha check: received={trade_sha[:20] if trade_sha else ""}... expected={expected[:20]}...')
     if trade_sha.upper() != expected.upper():
-        app.logger.warning('Newebpay TradeSha mismatch')
+        app.logger.warning(f'Newebpay TradeSha mismatch! received={trade_sha} expected={expected}')
         return 'FAIL', 400
 
     if status != 'SUCCESS':
-        app.logger.info(f'Newebpay payment failed: {status}')
+        app.logger.info(f'Newebpay payment not success: status={status}')
         return 'OK'
 
     data = newebpay_decrypt(trade_info_enc)
@@ -1286,12 +1348,13 @@ def newebpay_notify():
         "• 若等候超過 90 分鐘未能聯繫，預約將自動取消並離開現場。\n\n"
         "【行李說明】\n"
         "• 超過 28 吋或大型行李箱、胖胖箱等非標準行李，請事先告知。\n"
+        "• 行李定義：行李箱、嬰兒車、登機箱、警衛包等占用後車廂空間之物件。\n"
         "• 若到場後人數及行李與預約不符，司機有權拒絕載送，並不退費。\n\n"
         "【異動與取消】\n"
         "• 任何異動（包含行李件數）請於七天前告知。\n"
         "• 七天內任何理由均無法異動或取消，定金恕不退還。\n\n"
         "【保險】\n"
-        "• 所有車輛均投保乘客險 500 萬元以上／每人。\n\n"
+        "• 所有車輛均投保乘客險每人 500 萬元以上。\n\n"
         "如有任何問題，請隨時聯繫客服，感謝您的配合！"
     )
     try:
@@ -1663,36 +1726,14 @@ def _handle_message_inner(event):
                 )
             else:
                 session['date'] = text
-                session['step'] = 'input_time'
-                # 若標記需要推車程，在問時間前先 push（不佔 reply token）
+                session['step'] = 'input_flight'
+                # 若標記需要推車程，在問航班號前先 push
                 if session.pop('_push_travel_on_date', False):
                     import threading
                     threading.Thread(target=_push_est_travel, args=(user_id, dict(session)), daemon=True).start()
+                session.pop('_query_flight_after_date', None)  # 清除舊標記
                 user_sessions[user_id] = session
-                svc = session.get('service', '')
-                if svc == 'arrival':
-                    time_hint = (
-                        '請輸入航班預計抵達時間（24小時制，格式：08:30）：\n\n'
-                        '例：上午8點半 → 08:30\n'
-                        '    下午3點   → 15:00\n'
-                        '    晚上11點  → 23:00\n\n'
-                        '接機說明：\n'
-                        '我們以航班實際落地時間為主，\n'
-                        '於航班落地後等待最多 90 分鐘。'
-                    )
-                else:
-                    time_hint = (
-                        '請輸入從府上出發時間（24小時制，格式：08:30）：\n\n'
-                        '例：上午8點半 → 08:30\n'
-                        '    下午3點   → 15:00\n'
-                        '    晚上11點  → 23:00\n\n'
-                        '送機建議：\n'
-                        '建議航班起飛前 3 小時抵達機場，\n'
-                        '請依此預估您的出發時間。\n\n'
-                        '注意：22:00～06:00 為夜間時段，\n'
-                        '目前不指定優惠方案不加收費用。'
-                    )
-                reply_text(event.reply_token, time_hint)
+                _reply_time_hint(event.reply_token, session)
         except ValueError:
             reply_text(event.reply_token, '日期格式錯誤，請重新輸入，例如：2025-06-15')
 
@@ -1743,13 +1784,13 @@ def _handle_message_inner(event):
 
     elif step == 'input_email':
         session['email'] = '' if text == '無' else text
-        session['step'] = 'input_flight'
+        session['step'] = 'input_note'
         user_sessions[user_id] = session
-        reply_text(event.reply_token, '請輸入您的航班號碼：\n例：BR166、CI688、JX200\n\n（航班號碼為必填，沒有航班號碼無法完成預約）')
+        reply_text(event.reply_token, '請輸入備註事項（若無請輸入「無」）：')
 
     elif step == 'input_flight':
         fn = text.strip().upper().replace(' ', '')
-        # 驗證格式：需包含字母開頭 + 數字（例：BR830、CI001）
+        # 驗證格式：需包含字母開頭 + 數字（例：BR166、CI688）
         import re as _re
         if not _re.match(r'^[A-Z]{1,3}[0-9]{1,5}$', fn):
             reply_text(event.reply_token,
@@ -1758,51 +1799,51 @@ def _handle_message_inner(event):
                 '（沒有航班號碼無法完成預約，如有疑問請點「真人客服」）'
             )
         else:
-            fn = fn
             session['flight'] = fn
+            user_sessions[user_id] = session
+            date_q = session.get('date', '')
+            import re as _re2, threading
+            fn_nz = _re2.sub(r'^([A-Z]{1,3})0+([0-9]+)$', r'\1\2', fn)
             if not AVIATION_EDGE_KEY:
-                session['step'] = 'ask_child_seat'
+                # 無 API Key → 直接繼續
+                session['step'] = 'input_time'
                 user_sessions[user_id] = session
-                send_child_seat_menu(event.reply_token)
+                _reply_time_hint(event.reply_token, session)
             else:
-                # 先 reply 保住 token，查詢改用背景執行緒
-                reply_text(event.reply_token, '正在查詢航班資訊，請稍候...')
-                import threading
-                _sess = dict(session)
-                def _do_flight_query(uid=user_id, f=fn, s=_sess):
+                # 有 API Key → reply「查詢中」，背景查詢
+                reply_text(event.reply_token, f'正在查詢 {fn} 的航班資訊，請稍候...')
+                _sess_q = dict(session)
+                def _do_query(uid=user_id, f=fn, fnz=fn_nz, d=date_q, s=_sess_q):
                     try:
-                        finfo = query_flight_info(f, s.get('date', ''))
+                        finfo = query_flight_info(fnz, d)
                         if finfo:
                             s['flight_info'] = finfo
                             s['step'] = 'confirm_flight'
                             user_sessions[uid] = s
                             _push_flight_confirm(uid, f, finfo)
                         else:
-                            s['step'] = 'ask_child_seat'
+                            s['step'] = 'input_time'
                             user_sessions[uid] = s
                             with ApiClient(configuration) as api_client:
                                 MessagingApi(api_client).push_message(
-                                    PushMessageRequest(
-                                        to=uid,
-                                        messages=[TextMessage(text='查無此航班資訊，已記錄號碼，繼續下一步：')]
-                                    )
+                                    PushMessageRequest(to=uid,
+                                        messages=[TextMessage(text=f'查無 {f} 在 {d} 的航班資訊，已記錄號碼。')])
                                 )
-                            _push_child_seat_menu(uid)
+                            _push_time_hint(uid, s)
                     except Exception as e:
-                        app.logger.error(f'flight query thread error: {e}')
-                        s['step'] = 'ask_child_seat'
+                        app.logger.error(f'flight query error: {e}')
+                        s['step'] = 'input_time'
                         user_sessions[uid] = s
-                        _push_child_seat_menu(uid)
-                threading.Thread(target=_do_flight_query, daemon=True).start()
+                        _push_time_hint(uid, s)
+                threading.Thread(target=_do_query, daemon=True).start()
+
 
     elif step == 'confirm_flight':
-        # 客人確認或修改航班資訊後繼續
         if text in ['確認', '對', 'yes', 'YES', 'Yes', '是']:
-            session['step'] = 'ask_child_seat'
+            session['step'] = 'input_time'
             user_sessions[user_id] = session
-            send_child_seat_menu(event.reply_token)
+            _reply_time_hint(event.reply_token, session)
         else:
-            # 重新輸入航班號
             session['step'] = 'input_flight'
             user_sessions[user_id] = session
             reply_text(event.reply_token, '請重新輸入航班號碼：')
@@ -2040,12 +2081,7 @@ def _handle_postback_inner(event):
         user_sessions[user_id] = session
         reply_text(event.reply_token, '請輸入公司統一編號（8碼數字）：')
 
-    elif data == 'invoice_none':
-        session['invoice_type'] = ''
-        session['invoice_carrier'] = ''
-        session['step'] = 'confirm'
-        user_sessions[user_id] = session
-        send_order_confirm(event.reply_token, session)
+    # invoice_none 已移除（強制開立發票）
 
     # ── 多點停靠 ─────────────────────────────────────────────────────
     elif data == 'no_extra_stops':
@@ -2169,71 +2205,47 @@ def send_airport_menu(reply_token):
 
 def _build_flight_bubble(flight_number, finfo):
     """建立航班確認 Flex Bubble（供 push 和 reply 共用）"""
-    status_map = {
-        'scheduled': '準時', 'active': '飛行中', 'landed': '已降落',
-        'cancelled': '已取消', 'incident': '異常', 'diverted': '改降',
-        'en-route': '飛行中', 'unknown': '未知',
-    }
-    status_color = {
-        'scheduled': '#38A169', 'active': '#3182CE', 'en-route': '#3182CE',
-        'landed': '#38A169', 'cancelled': '#E53E3E',
-        'incident': '#E53E3E', 'diverted': '#DD6B20',
-    }
-    status_raw   = finfo.get('status', '') or ''
-    status_text  = status_map.get(status_raw, status_raw or '未知')
-    s_color      = status_color.get(status_raw, '#718096')
 
-    def time_rows(label_prefix, scheduled, actual, estimated, delay):
-        rows = []
-        if scheduled:
-            rows.append(make_info_row(f"{label_prefix}預定時間", scheduled))
-        if actual:
-            rows.append(make_info_row(f"{label_prefix}實際時間", actual))
-        elif estimated:
-            rows.append(make_info_row(f"{label_prefix}預估時間", estimated))
-        if not rows:
-            rows.append(make_info_row(f"{label_prefix}時間", '未提供'))
-        if delay and int(delay) > 0:
-            rows.append({"type": "text", "text": f"  延誤約 {delay} 分鐘",
-                          "size": "xs", "color": "#E53E3E", "margin": "xs", "wrap": True})
-        return rows
-
-    # 出發地資訊
-    dep_iata = finfo.get('dep_iata', '')
+    # 出發地
+    dep_iata = finfo.get('dep_iata', '') or ''
     dep_name = finfo.get('dep_airport', dep_iata or '未知')
     dep_label = f"{dep_name}（{dep_iata}）" if dep_iata and dep_iata not in dep_name else dep_name
     if finfo.get('dep_terminal'): dep_label += f"  T{finfo['dep_terminal']}"
     if finfo.get('dep_gate'):     dep_label += f"  Gate {finfo['dep_gate']}"
 
-    # 抵達地資訊
-    arr_iata = finfo.get('arr_iata', '')
+    # 抵達地
+    arr_iata = finfo.get('arr_iata', '') or ''
     arr_name = finfo.get('arr_airport', arr_iata or '未知')
     arr_label = f"{arr_name}（{arr_iata}）" if arr_iata and arr_iata not in arr_name else arr_name
     if finfo.get('arr_terminal'): arr_label += f"  T{finfo['arr_terminal']}"
     if finfo.get('arr_gate'):     arr_label += f"  Gate {finfo['arr_gate']}"
 
-    body = (
-        [{"type": "text", "text": "出發地", "size": "xs", "color": "#A0AEC0", "margin": "sm"}]
-        + [make_info_row("機場", dep_label)]
-        + time_rows("出發", finfo.get('dep_scheduled'), finfo.get('dep_actual'),
-                    finfo.get('dep_estimated'), finfo.get('dep_delay', 0))
-        + [{"type": "separator", "margin": "sm"}]
-        + [{"type": "text", "text": "抵達地", "size": "xs", "color": "#A0AEC0", "margin": "sm"}]
-        + [make_info_row("機場", arr_label)]
-        + time_rows("抵達", finfo.get('arr_scheduled'), finfo.get('arr_actual'),
-                    finfo.get('arr_estimated'), finfo.get('arr_delay', 0))
-    )
-    if finfo.get('arr_baggage'):
-        body.append(make_info_row("行李轉盤", finfo['arr_baggage']))
-    body += [
+    # 時間（標註「以實際當天為準」）
+    dep_time = finfo.get('dep_scheduled') or finfo.get('dep_estimated') or ''
+    arr_time = finfo.get('arr_scheduled') or finfo.get('arr_estimated') or ''
+
+    # 只取 HH:MM 部分顯示
+    def hhmm(t):
+        if not t: return '未提供'
+        try:
+            parts = t.split(' ')
+            return parts[-1][:5] if len(parts) > 1 else t[11:16] if len(t) > 10 else t
+        except Exception:
+            return t
+
+    body = [
+        make_info_row("出發機場", dep_label),
+        make_info_row("預計起飛", hhmm(dep_time)),
         {"type": "separator", "margin": "sm"},
-        {"type": "box", "layout": "horizontal", "margin": "sm", "contents": [
-            {"type": "text", "text": "航班狀態", "size": "sm", "color": "#A0AEC0", "flex": 3},
-            {"type": "text", "text": status_text, "size": "sm",
-             "color": s_color, "weight": "bold", "flex": 4},
-        ]},
-        {"type": "text", "text": "以上資訊是否正確？", "margin": "md",
-         "weight": "bold", "color": "#E05C00", "size": "sm", "wrap": True},
+        make_info_row("抵達機場", arr_label),
+        make_info_row("預計抵達", hhmm(arr_time)),
+        {"type": "separator", "margin": "sm"},
+        {"type": "text",
+         "text": "⚠️ 以上時間為班表參考，實際時間以航空公司當天公告為準",
+         "size": "xs", "color": "#A0AEC0", "wrap": True, "margin": "sm"},
+        {"type": "text",
+         "text": "請確認此為您的航班路線是否正確？",
+         "margin": "md", "weight": "bold", "color": "#E05C00", "size": "sm", "wrap": True},
     ]
 
     airline_str = finfo.get('airline', '') or ''
@@ -2242,7 +2254,7 @@ def _build_flight_bubble(flight_number, finfo):
         "header": {
             "type": "box", "layout": "vertical", "backgroundColor": "#1A2B4A",
             "contents": [
-                {"type": "text", "text": "航班資訊確認",
+                {"type": "text", "text": "航班路線確認",
                  "color": "#FFFFFF", "size": "xl", "weight": "bold"},
                 {"type": "text",
                  "text": f"{airline_str}  {flight_number}" if airline_str else flight_number,
@@ -2374,12 +2386,14 @@ def send_invoice_menu(reply_token):
             "type": "box", "layout": "vertical", "spacing": "sm",
             "contents": [
                 {"type": "text",
-                 "text": "定金 NT$315 將開立電子發票，請選擇收取方式：",
+                 "text": "定金 NT$315 將依法開立電子發票，請選擇收取方式：",
                  "size": "sm", "color": "#555555", "wrap": True, "margin": "sm"},
+                {"type": "text",
+                 "text": "個人載具請提供手機條碼（/XXXXXXX），若無條碼請選個人載具並輸入「無」，將開立雲端發票。",
+                 "size": "xs", "color": "#A0AEC0", "wrap": True, "margin": "xs"},
                 {"type": "separator", "margin": "md"},
                 make_button("個人載具（手機條碼）", "invoice_personal"),
                 make_button("公司抬頭（統一編號）", "invoice_company"),
-                make_button("不需要發票", "invoice_none"),
             ]
         }
     }
@@ -2396,38 +2410,140 @@ AIRPORT_ADDRESS_MAP = {
 }
 
 # ── 新功能 2：預估車程（push，不佔 reply_token）──────────────────────
+def _reply_time_hint(reply_token, session):
+    """用 reply_token 傳送時間輸入提示"""
+    svc = session.get('service', '')
+    if svc == 'arrival':
+        hint = (
+            '請輸入航班預計抵達時間（24小時制，格式：08:30）：\n\n'
+            '例：上午8點半 → 08:30\n'
+            '    下午3點   → 15:00\n'
+            '    晚上11點  → 23:00\n\n'
+            '接機說明：\n'
+            '我們以航班實際落地時間為主，\n'
+            '於航班落地後等待最多 90 分鐘。'
+        )
+    else:
+        hint = (
+            '請輸入從府上出發時間（24小時制，格式：08:30）：\n\n'
+            '例：上午8點半 → 08:30\n'
+            '    下午3點   → 15:00\n'
+            '    晚上11點  → 23:00\n\n'
+            '送機建議：\n'
+            '建議航班起飛前 3 小時抵達機場，\n'
+            '請依此預估您的出發時間。\n\n'
+            '注意：22:00～06:00 為夜間時段，\n'
+            '目前不指定優惠方案不加收費用。'
+        )
+    reply_text(reply_token, hint)
+
+
+def _push_time_hint(user_id, session):
+    """用 push_message 傳送時間輸入提示（背景執行緒用）"""
+    svc = session.get('service', '')
+    if svc == 'arrival':
+        hint = (
+            '請輸入航班預計抵達時間（24小時制，格式：08:30）：\n\n'
+            '例：上午8點半 → 08:30\n'
+            '    下午3點   → 15:00\n'
+            '    晚上11點  → 23:00\n\n'
+            '接機說明：\n'
+            '我們以航班實際落地時間為主，\n'
+            '於航班落地後等待最多 90 分鐘。'
+        )
+    else:
+        hint = (
+            '請輸入從府上出發時間（24小時制，格式：08:30）：\n\n'
+            '例：上午8點半 → 08:30\n'
+            '    下午3點   → 15:00\n'
+            '    晚上11點  → 23:00\n\n'
+            '送機建議：\n'
+            '建議航班起飛前 3 小時抵達機場，\n'
+            '請依此預估您的出發時間。'
+        )
+    try:
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).push_message(
+                PushMessageRequest(
+                    to=user_id,
+                    messages=[TextMessage(text=hint)]
+                )
+            )
+    except Exception as e:
+        app.logger.error(f'_push_time_hint error: {e}')
+
+
 def _push_est_travel(user_id, session):
-    """呼叫 Google Maps 預估機場→目的地車程，用 push_message 傳給客人"""
+    """呼叫 Google Maps 預估機場→最終目的地車程（含所有停靠點），用 push_message 傳給客人"""
     try:
         airport_name = session.get('airport', '')
         pickup       = session.get('pickup', '')
-        app.logger.info(f'_push_est_travel: airport={airport_name!r}, pickup={pickup!r}, key={bool(GOOGLE_MAPS_API_KEY)}')
-        if not airport_name or not pickup or not GOOGLE_MAPS_API_KEY:
+        extra_stops  = session.get('extra_stops', [])
+
+        # 終點：若有停靠點，以最後一個停靠點為終點（與報價邏輯一致）
+        final_dest   = extra_stops[-1] if extra_stops else pickup
+        # 顯示用標籤
+        dest_label   = final_dest
+
+        app.logger.info(f'_push_est_travel: airport={airport_name!r}, final_dest={final_dest!r}, key={bool(GOOGLE_MAPS_API_KEY)}')
+        if not airport_name or not final_dest or not GOOGLE_MAPS_API_KEY:
             app.logger.warning(f'_push_est_travel: 缺少必要參數，略過')
             return
-        # 用地址查詢，避免中文名稱解析失敗
         airport_addr = AIRPORT_ADDRESS_MAP.get(airport_name, airport_name)
-        params = {
-            'origins':      airport_addr,
-            'destinations': pickup,
-            'key':          GOOGLE_MAPS_API_KEY,
-            'language':     'zh-TW',
-            'region':       'tw',
-            'mode':         'driving',
-        }
-        resp = requests.get(
-            'https://maps.googleapis.com/maps/api/distancematrix/json',
-            params=params, timeout=8
-        )
-        result = resp.json()
-        app.logger.info(f'_push_est_travel Google Maps result: {result}')
-        element = result['rows'][0]['elements'][0]
-        if element.get('status') != 'OK':
-            app.logger.warning(f'_push_est_travel: element status={element.get("status")}，略過')
-            return
-        dist_text = element['distance']['text']
-        dur_text  = element['duration']['text']
-        msg = f"預估車程（{airport_name} → {pickup}）\n距離：{dist_text}\n行車時間：{dur_text}"
+
+        # waypoints：途經各停靠點（除最後一點）
+        waypoints = [pickup] + extra_stops[:-1] if extra_stops else []
+
+        if waypoints:
+            # 用 Directions API 算含途經點的路線
+            params = {
+                'origin':      airport_addr,
+                'destination': final_dest,
+                'waypoints':   '|'.join(waypoints),
+                'key':         GOOGLE_MAPS_API_KEY,
+                'language':    'zh-TW',
+                'region':      'tw',
+                'mode':        'driving',
+            }
+            resp = requests.get(
+                'https://maps.googleapis.com/maps/api/directions/json',
+                params=params, timeout=8
+            )
+            result = resp.json()
+            app.logger.info(f'_push_est_travel Directions result status: {result.get("status")}')
+            if result.get('status') == 'OK':
+                legs = result['routes'][0]['legs']
+                total_dist = sum(l['distance']['value'] for l in legs)
+                total_dur  = sum(l['duration']['value'] for l in legs)
+                dist_text = f'{total_dist/1000:.1f} 公里'
+                hrs, mins = divmod(total_dur // 60, 60)
+                dur_text  = f'{hrs} 小時 {mins} 分鐘' if hrs else f'{mins} 分鐘'
+                stops_info = f'，途經 {len(waypoints)} 個停靠點' if waypoints else ''
+                msg = f'預估車程（{airport_name} → {dest_label}{stops_info}）\n距離：{dist_text}\n行車時間：{dur_text}'
+            else:
+                return
+        else:
+            params = {
+                'origins':      airport_addr,
+                'destinations': final_dest,
+                'key':          GOOGLE_MAPS_API_KEY,
+                'language':     'zh-TW',
+                'region':       'tw',
+                'mode':         'driving',
+            }
+            resp = requests.get(
+                'https://maps.googleapis.com/maps/api/distancematrix/json',
+                params=params, timeout=8
+            )
+            result = resp.json()
+            app.logger.info(f'_push_est_travel Google Maps result: {result}')
+            element = result['rows'][0]['elements'][0]
+            if element.get('status') != 'OK':
+                app.logger.warning(f'_push_est_travel: element status={element.get("status")}，略過')
+                return
+            dist_text = element['distance']['text']
+            dur_text  = element['duration']['text']
+            msg = f'預估車程（{airport_name} → {dest_label}）\n距離：{dist_text}\n行車時間：{dur_text}'
         line_user_id = session.get('_line_user_id', user_id)
         with ApiClient(configuration) as api_client:
             MessagingApi(api_client).push_message(
@@ -2853,7 +2969,7 @@ def save_order(reply_token, session, user_id):
         "• 任何異動（包含行李件數）請於七天前告知。\n"
         "• 七天內任何理由均無法異動或取消，定金恕不退還。\n\n"
         "【保險】\n"
-        "• 所有車輛均投保乘客險 500 萬元以上／每人。\n\n"
+        "• 所有車輛均投保乘客險每人 500 萬元以上。\n\n"
         "如有任何問題，請隨時聯繫客服，感謝您的配合！"
     )
     try:

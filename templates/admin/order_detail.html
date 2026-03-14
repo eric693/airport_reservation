@@ -232,9 +232,20 @@
               </span>
             </div>
           </div>
+          {% if order.status == '待付款' %}
+          <form method="POST" action="/admin/order/{{ order.id }}/status" style="margin-bottom:10px">
+            <input type="hidden" name="status" value="待確認">
+            <button type="submit" class="btn btn-full"
+              style="background:#E05C00;color:#fff;padding:12px;border-radius:8px;font-weight:700;font-size:14px;border:none;cursor:pointer;width:100%"
+              onclick="return confirm('確認已收到此訂單定金付款？')">
+              ✅ 手動確認已收款（改為待確認）
+            </button>
+          </form>
+          {% endif %}
           <form method="POST" action="/admin/order/{{ order.id }}/status">
             <label class="form-label">更新狀態</label>
             <select name="status">
+              <option value="待付款" {% if order.status == '待付款' %}selected{% endif %}>待付款</option>
               <option value="待確認" {% if order.status == '待確認' %}selected{% endif %}>待確認</option>
               <option value="已確認" {% if order.status == '已確認' %}selected{% endif %}>已確認</option>
               <option value="已完成" {% if order.status == '已完成' %}selected{% endif %}>已完成</option>
