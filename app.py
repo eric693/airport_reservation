@@ -536,8 +536,46 @@ def ping():
 @app.route('/admin')
 @admin_required
 def admin_index():
-    orders = Order.query.order_by(Order.created_at.desc()).all()
-    return render_template('admin/index.html', orders=orders)
+    sort  = request.args.get('sort', 'booking_date')
+    order_dir = request.args.get('dir', 'asc')
+    status_filter = request.args.get('status', '')
+    date_from = request.args.get('date_from', '')
+    date_to   = request.args.get('date_to', '')
+
+    q = Order.query
+    if status_filter:
+        q = q.filter(Order.status == status_filter)
+    if date_from:
+        q = q.filter(Order.booking_date >= date_from)
+    if date_to:
+        q = q.filter(Order.booking_date <= date_to)
+
+    sort_col = {
+        'booking_date': Order.booking_date,
+        'booking_time': Order.booking_time,
+        'created_at':   Order.created_at,
+        'status':       Order.status,
+        'name':         Order.name,
+    }.get(sort, Order.booking_date)
+
+    if order_dir == 'desc':
+        if sort == 'booking_date':
+            q = q.order_by(Order.booking_date.desc(), Order.booking_time.asc())
+        else:
+            q = q.order_by(sort_col.desc())
+    else:
+        if sort == 'booking_date':
+            q = q.order_by(Order.booking_date.asc(), Order.booking_time.asc())
+        else:
+            q = q.order_by(sort_col.asc())
+
+    orders = q.all()
+    from datetime import datetime as _dt
+    return render_template('admin/index.html', orders=orders,
+                           sort=sort, dir=order_dir,
+                           status_filter=status_filter,
+                           date_from=date_from, date_to=date_to,
+                           now=_dt.now())
 
 @app.route('/admin/order/<int:order_id>')
 @admin_required
