@@ -1655,9 +1655,6 @@ def _handle_message_inner(event):
         session['extra_stops'] = []
         session['extra_stop_fee'] = 0
         user_sessions[user_id] = session
-        # 推送預估車程（背景，不佔 reply_token）
-        import threading
-        threading.Thread(target=_push_est_travel, args=(user_id, dict(session)), daemon=True).start()
         send_extra_stops_menu(event.reply_token)
 
     elif step == 'input_date':
@@ -1753,16 +1750,20 @@ def _handle_message_inner(event):
         session['email'] = '' if text == '無' else text
         session['step'] = 'input_flight'
         user_sessions[user_id] = session
-        reply_text(event.reply_token, '請輸入航班號碼（若無請輸入「無」）：')
+        reply_text(event.reply_token, '請輸入您的航班號碼：\n例：BR830、CI688、AE123\n\n（航班號碼為必填，沒有航班號碼無法完成預約）')
 
     elif step == 'input_flight':
-        if text == '無':
-            session['flight'] = ''
-            session['step'] = 'ask_child_seat'
-            user_sessions[user_id] = session
-            send_child_seat_menu(event.reply_token)
+        fn = text.strip().upper().replace(' ', '')
+        # 驗證格式：需包含字母開頭 + 數字（例：BR830、CI001）
+        import re as _re
+        if not _re.match(r'^[A-Z]{1,3}[0-9]{1,5}$', fn):
+            reply_text(event.reply_token,
+                f'「{text}」不是有效的航班號碼格式。\n\n'
+                '請重新輸入，例：BR830、CI688、AE123\n\n'
+                '（沒有航班號碼無法完成預約，如有疑問請點「真人客服」）'
+            )
         else:
-            fn = text.strip().upper().replace(' ', '')
+            fn = fn
             session['flight'] = fn
             if not AVIATION_EDGE_KEY:
                 session['step'] = 'ask_child_seat'
@@ -1879,9 +1880,11 @@ def _handle_message_inner(event):
             stop_num = len(session.get('extra_stops', [])) + 1
             reply_text(event.reply_token, f'請輸入第 {stop_num} 個停靠點地址：')
         else:
-            # 停靠點填完 → 繼續問日期
+            # 所有停靠點填完 → 推送預估車程（背景）再問日期
             session['step'] = 'input_date'
             user_sessions[user_id] = session
+            import threading
+            threading.Thread(target=_push_est_travel, args=(user_id, dict(session)), daemon=True).start()
             reply_text(event.reply_token, '請輸入接送日期（格式：2025-06-15）：')
 
     else:
@@ -2056,9 +2059,11 @@ def _handle_postback_inner(event):
             reply_text(event.reply_token, '預約資料已逾時，請重新點選「開始預約」。')
             user_sessions.pop(user_id, None)
             return
-        # 停靠點確認完 → 繼續問日期
+        # 所有地址確認完 → 推送預估車程（背景）再問日期
         session['step'] = 'input_date'
         user_sessions[user_id] = session
+        import threading
+        threading.Thread(target=_push_est_travel, args=(user_id, dict(session)), daemon=True).start()
         reply_text(event.reply_token, '請輸入接送日期（格式：2025-06-15）：')
 
     elif data == 'add_extra_stop':
