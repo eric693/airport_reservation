@@ -409,7 +409,7 @@ def send_driver_info_to_customer(order, driver):
                 make_info_row("車牌", driver.car_plate),
                 make_info_row("車身顏色", driver.car_color),
                 {"type": "separator", "margin": "md"},
-                {"type": "text", "text": "如有任何問題請直接致電司機，祝您旅途愉快！",
+                {"type": "text", "text": "為了確保乘車安全與服務品質，請務必確認車款、車號及司機資訊與客服通知相符，若有任何異常，請立即連繫客服，避免誤搭及後續爭議。",
                  "size": "xs", "color": "#888888", "margin": "md", "wrap": True}
             ]
         }
