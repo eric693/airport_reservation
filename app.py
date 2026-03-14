@@ -2413,7 +2413,7 @@ def _handle_postback_inner(event):
         reply_text(event.reply_token,
             '✅ 已通知真人客服！\n\n'
             '客服人員收到通知後將主動與您聯繫，請稍候。\n\n'
-            '如有急事，也可以直接加我們 LINE：rbf5256'
+            '如有急事，可以撥打 04-26318898、0968685835'
         )
 
     elif data == 'start_booking':
