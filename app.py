@@ -976,13 +976,23 @@ def admin_cancel_dispatch(job_id):
 @app.route('/admin/dispatch')
 @admin_required
 def admin_dispatch_list():
-    sort     = request.args.get('sort', 'booking_date')
-    dir_     = request.args.get('dir', 'asc')
-    status_f = request.args.get('status', '')
+    sort      = request.args.get('sort', 'booking_date')
+    dir_      = request.args.get('dir', 'asc')
+    status_f  = request.args.get('status', '')
+    date_from = request.args.get('date_from', '')
+    date_to   = request.args.get('date_to', '')
+    date_exact= request.args.get('date_exact', '')  # 單日快速篩選
 
     q = DispatchJob.query.join(Order)
     if status_f:
         q = q.filter(DispatchJob.status == status_f)
+    if date_exact:
+        q = q.filter(Order.booking_date == date_exact)
+    else:
+        if date_from:
+            q = q.filter(Order.booking_date >= date_from)
+        if date_to:
+            q = q.filter(Order.booking_date <= date_to)
 
     if sort == 'booking_date':
         col = Order.booking_date
@@ -994,8 +1004,12 @@ def admin_dispatch_list():
     q = q.order_by(col.asc() if dir_ == 'asc' else col.desc(),
                    Order.booking_time.asc())
     jobs = q.all()
+
+    from datetime import datetime as _dt
     return render_template('admin/dispatch.html', jobs=jobs,
-                           sort=sort, dir=dir_, status_filter=status_f)
+                           sort=sort, dir=dir_, status_filter=status_f,
+                           date_from=date_from, date_to=date_to,
+                           date_exact=date_exact, now=_dt.now())
 
 def push_dispatch_to_driver(driver, order, job):
     bubble = {

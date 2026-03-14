@@ -91,16 +91,51 @@
 
   <div class="card">
     <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
-      <div class="card-title">搶單任務記錄</div>
+      <div class="card-title">
+        搶單任務記錄
+        {% if date_exact %}
+          <span style="font-size:13px;font-weight:400;color:#4A9B8F;margin-left:8px">{{ date_exact }}</span>
+        {% elif date_from or date_to %}
+          <span style="font-size:13px;font-weight:400;color:#4A9B8F;margin-left:8px">{{ date_from }} ～ {{ date_to }}</span>
+        {% endif %}
+        {% if status_filter == '開放搶單' %}
+          <span style="font-size:12px;background:#FFF3CD;color:#856404;padding:2px 8px;border-radius:4px;margin-left:6px">未派出</span>
+        {% endif %}
+      </div>
       <form method="GET" action="/admin/dispatch" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <select name="status" onchange="this.form.submit()" style="padding:6px 10px;border:1px solid #E2E8F0;border-radius:6px;font-size:13px">
-          <option value="">全部狀態</option>
-          <option value="開放搶單" {{ 'selected' if status_filter=='開放搶單' }}>開放搶單</option>
-          <option value="已結單"   {{ 'selected' if status_filter=='已結單' }}>已結單</option>
-          <option value="已取消"   {{ 'selected' if status_filter=='已取消' }}>已取消</option>
-        </select>
         <input type="hidden" name="sort" value="{{ sort }}">
         <input type="hidden" name="dir"  value="{{ dir }}">
+
+        <!-- 快速跳到今天/明天 -->
+        <a href="/admin/dispatch?date_exact={{ now.strftime('%Y-%m-%d') }}&status=開放搶單&sort={{ sort }}&dir={{ dir }}"
+           style="padding:6px 10px;background:#EBF8F1;color:#2D6A4F;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;white-space:nowrap">
+          今天未派
+        </a>
+
+        <!-- 日期範圍 -->
+        <label style="font-size:12px;color:#718096;white-space:nowrap">日期：</label>
+        <input type="date" name="date_from" value="{{ date_from }}"
+               style="padding:5px 8px;border:1px solid #E2E8F0;border-radius:6px;font-size:13px;width:135px"
+               onchange="this.form.submit()">
+        <span style="color:#A0AEC0;font-size:13px">～</span>
+        <input type="date" name="date_to" value="{{ date_to }}"
+               style="padding:5px 8px;border:1px solid #E2E8F0;border-radius:6px;font-size:13px;width:135px"
+               onchange="this.form.submit()">
+
+        <!-- 狀態篩選 -->
+        <select name="status" onchange="this.form.submit()"
+                style="padding:6px 10px;border:1px solid #E2E8F0;border-radius:6px;font-size:13px">
+          <option value="">全部狀態</option>
+          <option value="開放搶單" {{ 'selected' if status_filter=='開放搶單' }}>🔴 開放搶單（未派）</option>
+          <option value="已結單"   {{ 'selected' if status_filter=='已結單' }}>✅ 已結單</option>
+          <option value="已取消"   {{ 'selected' if status_filter=='已取消' }}>已取消</option>
+        </select>
+
+        {% if date_from or date_to or date_exact or status_filter %}
+        <a href="/admin/dispatch" style="padding:6px 10px;background:#EDF2F7;color:#718096;border-radius:6px;font-size:12px;text-decoration:none;white-space:nowrap">
+          ✕ 清除
+        </a>
+        {% endif %}
       </form>
     </div>
     {% if jobs %}
