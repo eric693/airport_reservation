@@ -1211,29 +1211,20 @@ def send_quote_to_customer(order):
         pass
 
     if extra_stops:
+        # 防投機：強制以最後停靠點為終點計算報價
         last_stop = extra_stops[-1]
-        rules = PriceRule.query.filter_by(active=True).order_by(PriceRule.sort_order).all()
-        matched_rule = None
-        for rule in rules:
-            airport_match = not rule.airport_keyword or rule.airport_keyword in order.airport
-            region_match  = not rule.region_keyword or any(
-                kw.strip() in last_stop for kw in rule.region_keyword.split(',')
-            )
-            if airport_match and region_match:
-                matched_rule = rule
-                break
-        if matched_rule:
-            original_pickup = order.pickup_location
-            order.pickup_location = last_stop
-            order.extra_stop_fee  = 0
-            quote = calculate_quote(order)
-            order.pickup_location = original_pickup
-            if quote['breakdown']:
-                quote['breakdown'][0]['label'] = f'基本車資（{matched_rule.name}，途經 {original_pickup}）'
-            if quote['base_price'] == 0:
-                return
-            _send_quote_bubble(order, quote)
+        original_pickup = order.pickup_location
+        order.pickup_location = last_stop
+        order.extra_stop_fee  = 0
+        quote = calculate_quote(order)
+        order.pickup_location = original_pickup
+        if quote['breakdown']:
+            stops_label = '、'.join([original_pickup] + extra_stops[:-1]) if len(extra_stops) > 1 else original_pickup
+            quote['breakdown'][0]['label'] = f'基本車資（途經 {stops_label}）'
+        if quote['base_price'] == 0:
             return
+        _send_quote_bubble(order, quote)
+        return
 
     quote = calculate_quote(order)
     if order.extra_stop_fee:
@@ -2608,7 +2599,7 @@ def send_extra_stops_menu(reply_token):
         "header": header_box("多點停靠服務"),
         "body": {"type": "box", "layout": "vertical", "contents": [
             {"type": "text", "text": "是否需要途中加停？", "weight": "bold", "size": "md", "wrap": True},
-            {"type": "text", "text": "系統將依停靠點與出發地距離自動計算加收費用：", "size": "sm", "color": "#718096", "margin": "sm", "wrap": True},
+            {"type": "text", "text": "注意：系統將以最後一個停靠點為終點重新計算車資，確保報價公平合理。", "size": "sm", "color": "#E05C00", "margin": "sm", "wrap": True},
             {"type": "separator", "margin": "md"},
             make_info_row("5 公里以內", "+NT$200"),
             make_info_row("5–12 公里", "+NT$300"),
@@ -2639,26 +2630,25 @@ def build_quote_from_session(session):
     o.extra_stop_fee   = session.get('extra_stop_fee', 0)
 
     extra_stops = session.get('extra_stops', [])
+    origin = session.get('pickup', '')
+
     if extra_stops:
+        # ── 防投機邏輯：有停靠點時，強制以「最後一個停靠點」為終點計算報價 ──
+        # 避免客人用便宜起點+多點加停規避較遠/偏遠區域的正確報價
         last_stop = extra_stops[-1]
-        rules = PriceRule.query.filter_by(active=True).order_by(PriceRule.sort_order).all()
-        matched_rule = None
-        for rule in rules:
-            airport_match = not rule.airport_keyword or rule.airport_keyword in o.airport
-            region_match  = not rule.region_keyword or any(
-                kw.strip() in last_stop for kw in rule.region_keyword.split(',')
-            )
-            if airport_match and region_match:
-                matched_rule = rule
-                break
-        if matched_rule:
-            o.pickup_location = last_stop
-            o.extra_stop_fee  = 0
-            quote = calculate_quote(o)
-            origin = session.get('pickup', '')
-            if quote['breakdown']:
-                quote['breakdown'][0]['label'] = f'基本車資（{matched_rule.name}，途經 {origin}）'
-            return quote
+        o.pickup_location = last_stop  # 終點改為最後停靠點
+        o.extra_stop_fee  = 0          # 不另加多點費（已含在終點報價內）
+        quote = calculate_quote(o)
+        # 明細標示：顯示實際起點與所有途經點
+        stops_label = '、'.join([origin] + extra_stops[:-1]) if len(extra_stops) > 1 else origin
+        if quote['breakdown']:
+            quote['breakdown'][0]['label'] = f'基本車資（途經 {stops_label}）'
+        elif quote['total'] == 0:
+            # 查無報價規則，保留多點費用告知客人
+            quote['breakdown'].append({'label': f'多點加收（終點：{last_stop}）',
+                                        'amount': session.get('extra_stop_fee', 0)})
+            quote['total'] += session.get('extra_stop_fee', 0)
+        return quote
 
     quote = calculate_quote(o)
     if o.extra_stop_fee:
