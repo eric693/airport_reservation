@@ -951,9 +951,25 @@ def push_dispatch_to_driver(driver, order, job):
                 make_info_row("乘客/行李", f"{order.passengers}人 / {order.luggage}件"),
                 make_info_row("客人姓名", (order.customer_name[0] + 'O' + order.customer_name[-1]) if order.customer_name and len(order.customer_name) >= 2 else '***'),
                 *([{"type": "separator", "margin": "md"}]),
-                *([make_info_row("本單費用", f"NT${job.driver_fee:,}")] if job.driver_fee else [make_info_row("本單費用", "請洽調度確認")]),
+                {"type": "separator", "margin": "sm"},
+                # 費用資訊
+                *(
+                    [
+                        make_info_row("向客人收取", f"NT${order.total_price:,}" if order.total_price else "依報價單"),
+                        make_info_row("司機所得", f"NT${job.driver_fee:,}"),
+                        {"type": "box", "layout": "horizontal", "margin": "xs",
+                         "contents": [
+                             {"type": "text", "text": "回金金額", "size": "sm", "color": "#E05C00", "weight": "bold", "flex": 3},
+                             {"type": "text",
+                              "text": f"NT${max(0, (order.total_price or 0) - job.driver_fee):,}",
+                              "size": "md", "color": "#C53030", "weight": "bold", "flex": 4, "align": "end"},
+                         ]},
+                    ] if job.driver_fee else [
+                        make_info_row("本單費用", "請洽調度確認"),
+                    ]
+                ),
+                {"type": "separator", "margin": "sm"},
                 make_info_row("航班", order.flight_number or '無'),
-                {"type": "separator", "margin": "md"},
                 *([make_info_row("備註", job.note)] if job.note else []),
             ]
         },
