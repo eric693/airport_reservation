@@ -136,7 +136,7 @@
     <div class="page-title">訂單 #{{ order.id }}</div>
     <div class="header-actions">
       <a href="/admin" class="btn btn-outline">返回列表</a>
-      <a href="/admin/order/{{ order.id }}/edit" class="btn btn-primary" style="background:#2B6CB0">✏️ 編輯訂單</a>
+      <a href="/admin/order/{{ order.id }}/edit" class="btn btn-primary" style="background:#2B6CB0">編輯訂單</a>
       <button class="btn btn-danger" onclick="document.getElementById('deleteModal').classList.add('show')">刪除訂單</button>
     </div>
   </div>
@@ -239,7 +239,7 @@
             <button type="submit" class="btn btn-full"
               style="background:#E05C00;color:#fff;padding:12px;border-radius:8px;font-weight:700;font-size:14px;border:none;cursor:pointer;width:100%"
               onclick="return confirm('確認已收到此訂單定金付款？')">
-              ✅ 手動確認已收款（改為待確認）
+              手動確認已收款
             </button>
           </form>
           {% endif %}
@@ -259,7 +259,7 @@
 
       <!-- 傳訊息給客人 -->
       <div class="card">
-        <div class="card-header"><div class="card-title">💬 傳訊息給客人</div></div>
+        <div class="card-header"><div class="card-title">傳訊息給客人</div></div>
         {% if order.line_user_id and order.line_user_id != 'manual' %}
         <div style="margin-bottom:12px">
           <div style="font-size:12px;color:#718096;margin-bottom:6px">
@@ -272,19 +272,19 @@
           <div style="display:flex;flex-wrap:wrap;gap:8px">
             <button type="button" class="btn btn-outline" style="font-size:12px;padding:5px 10px"
               onclick="document.getElementById('msgInput').value='請問您的詳細接送地址是？（需含縣市、鄉鎮、路名、門號）'">
-              📍 補充地址
+              補充地址
             </button>
             <button type="button" class="btn btn-outline" style="font-size:12px;padding:5px 10px"
               onclick="document.getElementById('msgInput').value='請問您的航班號碼為何？（例：BR166、CI688）'">
-              ✈️ 補充航班
+              補充航班
             </button>
             <button type="button" class="btn btn-outline" style="font-size:12px;padding:5px 10px"
               onclick="document.getElementById('msgInput').value='您好，您的訂單 #{{ order.id }} 已確認，司機將準時為您服務，如有疑問請隨時聯繫我們。'">
-              ✅ 訂單確認
+              訂單確認
             </button>
             <button type="button" class="btn btn-outline" style="font-size:12px;padding:5px 10px"
               onclick="document.getElementById('msgInput').value='請問您的乘客人數及行李件數是否正確？若有異動請告知我們。'">
-              👥 確認人數行李
+              確認人數行李
             </button>
           </div>
         </div>
@@ -293,7 +293,7 @@
             style="width:100%;padding:10px;border:1px solid #E2E8F0;border-radius:8px;font-size:14px;resize:vertical;margin-bottom:10px"
             placeholder="輸入要傳給客人的訊息...&#10;（系統會自動加上「【樂高客服】」前綴）"></textarea>
           <button type="submit" class="btn btn-primary" style="width:100%">
-            📨 發送 LINE 訊息給客人
+            發送 LINE 訊息給客人
           </button>
         </form>
         {% else %}
@@ -349,6 +349,25 @@
             {% if order.dispatch_job.status == '開放搶單' %}
             <form method="POST" action="/admin/dispatch/{{ order.dispatch_job.id }}/cancel">
               <button type="submit" class="btn btn-danger btn-full" onclick="return confirm('確定取消搶單？')">取消搶單</button>
+            </form>
+            {% elif order.dispatch_job.status in ['已結單', '已結單待確認'] %}
+            <div style="background:#FFF3CD;border-radius:8px;padding:12px;margin-bottom:10px;font-size:13px;color:#856404">
+              {% if order.dispatch_job.status == '已結單待確認' %}
+              司機已取消接單，請重新開放搶單
+              {% else %}
+              已有司機接單
+              {% endif %}
+            </div>
+            <form method="POST" action="/admin/dispatch/{{ order.dispatch_job.id }}/reopen"
+                  onsubmit="return confirm('重新開放搶單？原本接單的司機將被取消，並重新通知所有司機。')">
+              <button type="submit" class="btn btn-full" style="background:#E05C00;color:#fff;margin-bottom:8px">
+                重新開放搶單
+              </button>
+            </form>
+            <form method="POST" action="/admin/dispatch/{{ order.dispatch_job.id }}/cancel">
+              <button type="submit" class="btn btn-danger btn-full" onclick="return confirm('確定取消此搶單任務？')" style="font-size:12px">
+                取消搶單任務
+              </button>
             </form>
             {% endif %}
           {% else %}

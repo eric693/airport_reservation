@@ -962,6 +962,53 @@ def admin_create_dispatch(order_id):
     flash(f'搶單任務已發布，共通知 {sent} 位司機')
     return redirect(url_for('admin_order_detail', order_id=order_id))
 
+
+@app.route('/admin/dispatch/<int:job_id>/reopen', methods=['POST'])
+@admin_required
+def admin_reopen_dispatch(job_id):
+    """重新開放搶單（清除已搶司機，通知所有司機）"""
+    job = DispatchJob.query.get_or_404(job_id)
+    order = job.order
+
+    # 清除原本搶到的司機
+    old_driver_id = job.grabbed_by
+    job.status     = '開放搶單'
+    job.grabbed_by = None
+    job.grabbed_at = None
+    order.driver_id = None
+    order.status    = '搶單中'
+    db.session.commit()
+
+    # 通知原司機已被取消
+    if old_driver_id:
+        old_driver = Driver.query.get(old_driver_id)
+        if old_driver and old_driver.line_user_id:
+            try:
+                with ApiClient(configuration) as api_client:
+                    MessagingApi(api_client).push_message(
+                        PushMessageRequest(
+                            to=old_driver.line_user_id,
+                            messages=[TextMessage(
+                                text=f'訂單 #{order.id} 的接單已由管理員取消，此訂單重新開放搶單。'
+                            )]
+                        )
+                    )
+            except Exception as e:
+                app.logger.error(f'reopen notify old driver error: {e}')
+
+    # 重新推播給所有司機
+    drivers = Driver.query.filter(Driver.active == True, Driver.line_user_id != '').all()
+    sent = 0
+    for driver in drivers:
+        try:
+            push_dispatch_to_driver(driver, order, job)
+            sent += 1
+        except Exception as e:
+            app.logger.error(f'reopen push error driver {driver.id}: {e}')
+
+    flash(f'搶單已重新開放，共通知 {sent} 位司機')
+    return redirect(url_for('admin_order_detail', order_id=job.order_id))
+
 @app.route('/admin/dispatch/<int:job_id>/cancel', methods=['POST'])
 @admin_required
 def admin_cancel_dispatch(job_id):
@@ -2393,6 +2440,7 @@ def _handle_postback_inner(event):
                     db.session.add(DispatchResponse(job_id=job_id, driver_id=driver.id, action='放棄'))
                     db.session.commit()
         reply_text(event.reply_token, '已略過此訂單。')
+
 
 # ── Menu senders ─────────────────────────────────────────────────────
 def notify_human_agent(requester_line_id):
