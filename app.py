@@ -2237,7 +2237,7 @@ def _handle_postback_inner(event):
         session['pet'] = True
         session['step'] = 'input_note'
         user_sessions[user_id] = session
-        reply_text(event.reply_token, '寵物同行加收：車型加價 NT$300 + 清潔費 NT$800 = NT$1,100\n\n\n請輸入備註事項（若無請輸入「無」）：')
+        reply_text(event.reply_token, '寵物同行加收：NT$300\n\n請輸入備註事項（若無請輸入「無」）：')
 
     elif data == 'pet_no':
         session['pet'] = False

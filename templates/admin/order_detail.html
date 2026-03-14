@@ -178,7 +178,7 @@
           <div style="margin-bottom: 16px;">
             <span class="tag {{ 'tag-warn' if order.night_fee else 'tag-inactive' }}">夜間加成{{ ' +NT$200' if order.night_fee else '（無）' }}</span>
             <span class="tag {{ 'tag-active' if order.sign_board else 'tag-inactive' }}">舉牌服務{{ ' +NT$200' if order.sign_board else '（無）' }}</span>
-            <span class="tag {{ 'tag-active' if order.pet else 'tag-inactive' }}">寵物同行{{ ' +NT$1,100' if order.pet else '（無）' }}</span>
+            <span class="tag {{ 'tag-active' if order.pet else 'tag-inactive' }}">寵物同行{{ ' +NT$300' if order.pet else '（無）' }}</span>
           </div>
           {% if order.child_seat and order.child_seat_count %}
           <div style="margin-bottom: 12px;">
@@ -190,7 +190,7 @@
           {% if order.night_fee %}<div class="fee-row"><span>夜間服務費</span><span>NT$200</span></div>{% endif %}
           {% if order.sign_board %}<div class="fee-row"><span>舉牌服務</span><span>NT$200</span></div>{% endif %}
           {% if order.child_seat_count %}<div class="fee-row"><span>兒童安全座椅 × {{ order.child_seat_count }}</span><span>NT${{ order.child_seat_count * 100 }}</span></div>{% endif %}
-          {% if order.pet %}<div class="fee-row"><span>寵物同行</span><span>NT$1,100</span></div>{% endif %}
+          {% if order.pet %}<div class="fee-row"><span>寵物同行</span><span>NT$300</span></div>{% endif %}
           {% if order.extra_fees() > 0 %}
           <div class="fee-row"><span>加購費用合計</span><span>NT${{ order.extra_fees() }}</span></div>
           {% else %}

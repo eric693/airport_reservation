@@ -48,7 +48,7 @@ class Order(db.Model):
         if self.night_fee: total += 200
         if self.sign_board: total += 200
         if self.child_seat_count: total += self.child_seat_count * 100
-        if self.pet: total += 1100
+        if self.pet: total += 300
         return total
 
 
