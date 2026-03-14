@@ -2240,6 +2240,14 @@ def _handle_postback_inner(event):
         user_sessions[user_id] = session
         reply_text(event.reply_token, '請輸入公司統一編號（8碼數字）：')
 
+    elif data == 'invoice_donate':
+        # 捐贈發票（愛心碼）→ 直接跳確認
+        session['invoice_type'] = 'donate'
+        session['invoice_carrier'] = ''
+        session['step'] = 'confirm'
+        user_sessions[user_id] = session
+        send_order_confirm(event.reply_token, session)
+
     # invoice_none 已移除（強制開立發票）
 
     # ── 多點停靠 ─────────────────────────────────────────────────────
@@ -2547,12 +2555,10 @@ def send_invoice_menu(reply_token):
                 {"type": "text",
                  "text": "定金 NT$315 將依法開立電子發票，請選擇收取方式：",
                  "size": "sm", "color": "#555555", "wrap": True, "margin": "sm"},
-                {"type": "text",
-                 "text": "個人載具請提供手機條碼（/XXXXXXX），若無條碼請選個人載具並輸入「無」，將開立雲端發票。",
-                 "size": "xs", "color": "#A0AEC0", "wrap": True, "margin": "xs"},
                 {"type": "separator", "margin": "md"},
                 make_button("個人載具（手機條碼）", "invoice_personal"),
                 make_button("公司抬頭（統一編號）", "invoice_company"),
+                make_button("捐贈發票（愛心碼）", "invoice_donate"),
             ]
         }
     }
@@ -2969,6 +2975,8 @@ def send_order_confirm(reply_token, session):
         inv_text = f"手機載具：{session.get('invoice_carrier', '')}"
     elif inv_type == 'personal':
         inv_text = "個人雲端發票"
+    elif inv_type == 'donate':
+        inv_text = "捐贈發票（愛心碼）"
     else:
         inv_text = "不需要"
 
@@ -3056,6 +3064,8 @@ def save_order(reply_token, session, user_id):
     inv_type = session.get('invoice_type', '')
     if inv_type == 'company':
         inv_note = f"【發票】公司抬頭：{session.get('invoice_company_name','')}（統編 {session.get('invoice_tax_id','')}）"
+    elif inv_type == 'donate':
+        inv_note = "【發票】捐贈發票（愛心碼）"
     elif inv_type == 'personal' and session.get('invoice_carrier'):
         inv_note = f"【發票】手機載具：{session.get('invoice_carrier','')}"
     elif inv_type == 'personal':
