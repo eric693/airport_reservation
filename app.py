@@ -1991,6 +1991,15 @@ def _handle_message_inner(event):
     session = user_sessions.get(user_id, {})
     step = session.get('step', '')
 
+    # ── 群組訊息：只處理指令，其餘完全忽略 ──
+    source_type = event.source.type
+    if source_type == 'group':
+        if text in ['群組ID', 'groupid', 'GROUP ID']:
+            group_id = event.source.group_id
+            reply_text(event.reply_token, f'此群組 ID：\n{group_id}\n\n請將此 ID 填入 Render 環境變數 SUPPORT_GROUP_ID')
+        # 群組裡其他訊息一律不回應
+        return
+
     if text in ['我的ID', 'myid', 'MY ID']:
         reply_text(event.reply_token, f'您的 LINE User ID：\n{user_id}\n\n請將此 ID 提供給管理員，設定後即可接收搶單通知。')
         return
