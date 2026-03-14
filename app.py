@@ -2077,6 +2077,12 @@ def _handle_message_inner(event):
                     f'7 天內預約請直接聯繫客服，由真人為您服務，謝謝！\n\n'
                     f'請重新輸入 8 天後的日期（格式：{datetime.now().strftime("%Y-%m-%d")}）：'
                 )
+            elif days_ahead > 240:
+                reply_text(event.reply_token,
+                    f'⚠️ 線上預約系統僅開放 8 個月（240 天）內的日期。\n\n'
+                    f'如需預約更遠的日期，請聯繫客服人員協助處理，謝謝！\n\n'
+                    f'請重新輸入日期（格式：{datetime.now().strftime("%Y-%m-%d")}）：'
+                )
             else:
                 session['date'] = text
                 session['step'] = 'input_time'
