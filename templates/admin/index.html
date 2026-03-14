@@ -196,6 +196,7 @@
           <th>機場</th>
           <th>{{ sort_link('booking_date', '預約日期 / 時間') }}</th>
           <th>人數 / 行李</th>
+          <th>報價</th>
           <th>{{ sort_link('status', '狀態') }}</th>
           <th>{{ sort_link('created_at', '建立時間') }}</th>
           <th>操作</th>
@@ -224,6 +225,13 @@
             <div class="service-tag">{{ order.booking_time }}</div>
           </td>
           <td>{{ order.passengers }}人 / {{ order.luggage }}件</td>
+          <td>
+            {% if order.total_price %}
+              <span style="font-weight:700;color:#2D6A4F">NT${{ "{:,}".format(order.total_price) }}</span>
+            {% else %}
+              <span style="color:#A0AEC0;font-size:12px">待定</span>
+            {% endif %}
+          </td>
           <td>
             <span class="badge badge-{{ {'待確認':'pending','已確認':'confirmed','已完成':'completed','已取消':'cancelled'}.get(order.status, 'pending') }}">
               {{ order.status }}

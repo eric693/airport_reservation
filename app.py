@@ -3113,6 +3113,16 @@ def send_order_confirm(reply_token, session):
     extra_stops = session.get('extra_stops', [])
 
     quote = build_quote_from_session(session)
+    # 把報價總額存入 session，讓 save_order 可以帶入 total_price
+    session['_quoted_total'] = quote.get('total', 0)
+    user_sessions_ref = None
+    try:
+        from flask import current_app
+        # 更新 session 中的報價
+        if hasattr(current_app, '_get_current_object'):
+            pass
+    except Exception:
+        pass
 
     # 報價明細 rows
     quote_rows = []
@@ -3264,7 +3274,8 @@ def save_order(reply_token, session, user_id):
             note=full_note,
             extra_stops=json.dumps(session.get('extra_stops', []), ensure_ascii=False),
             extra_stop_fee=session.get('extra_stop_fee', 0),
-            status='待付款'
+            status='待付款',
+            total_price=session.get('_quoted_total', 0),
         )
         db.session.add(order)
         db.session.commit()
