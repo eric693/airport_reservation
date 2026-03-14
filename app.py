@@ -1745,7 +1745,7 @@ def _handle_message_inner(event):
         session['email'] = '' if text == '無' else text
         session['step'] = 'input_flight'
         user_sessions[user_id] = session
-        reply_text(event.reply_token, '請輸入您的航班號碼：\n例：BR830、CI688、AE123\n\n（航班號碼為必填，沒有航班號碼無法完成預約）')
+        reply_text(event.reply_token, '請輸入您的航班號碼：\n例：BR166、CI688、JX200\n\n（航班號碼為必填，沒有航班號碼無法完成預約）')
 
     elif step == 'input_flight':
         fn = text.strip().upper().replace(' ', '')
@@ -1754,7 +1754,7 @@ def _handle_message_inner(event):
         if not _re.match(r'^[A-Z]{1,3}[0-9]{1,5}$', fn):
             reply_text(event.reply_token,
                 f'「{text}」不是有效的航班號碼格式。\n\n'
-                '請重新輸入，例：BR830、CI688、AE123\n\n'
+                '請重新輸入，例：BR166、CI688、JX200\n\n'
                 '（沒有航班號碼無法完成預約，如有疑問請點「真人客服」）'
             )
         else:
