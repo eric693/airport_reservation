@@ -1434,15 +1434,8 @@ def query_flight_info(flight_number: str, date_str: str = '') -> dict | None:
             'key':         api_key,
             'flight_iata': fn_no_zero,
         }
-        # 若有預約日期，加入 date 參數（格式 YYYY-MM-DD）
-        if date_str:
-            try:
-                # 驗證格式正確
-                datetime.strptime(date_str, '%Y-%m-%d')
-                timetable_params_base['date'] = date_str
-                app.logger.info(f'query_flight_info: 帶入預約日期 {date_str}')
-            except ValueError:
-                pass
+        # 不帶 date 參數查詢（Aviation Edge date 參數不穩定），查到後再用日期篩選
+        app.logger.info(f'query_flight_info: 查詢 {fn_no_zero}，預約日期={date_str}')
 
         for t in ['departure', 'arrival']:
             params = {**timetable_params_base, 'type': t}
@@ -1452,19 +1445,18 @@ def query_flight_info(flight_number: str, date_str: str = '') -> dict | None:
                 timeout=8
             )
             data = resp.json()
-            app.logger.info(f'aviation_edge timetable {t} (date={date_str}): {data[:1] if isinstance(data,list) else data}')
+            app.logger.info(f'aviation_edge timetable {t}: {data[:1] if isinstance(data,list) else data}')
             if isinstance(data, list) and data:
-                # 若有多筆，找最接近預約日期的班次
+                # 若有多筆且有預約日期，優先找日期相符的
+                record = data[0]
                 if date_str and len(data) > 1:
-                    def score(f):
+                    for f in data:
                         dep = f.get('departure', {}) or {}
                         arr = f.get('arrival', {}) or {}
                         t_str = dep.get('scheduledTime') or arr.get('scheduledTime') or ''
-                        return t_str[:10] == date_str
-                    matched = [f for f in data if score(f)]
-                    record = matched[0] if matched else data[0]
-                else:
-                    record = data[0]
+                        if t_str[:10] == date_str:
+                            record = f
+                            break
                 return parse_record(record)
 
     except Exception as e:
