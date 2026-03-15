@@ -1039,9 +1039,6 @@ def admin_cancel_dispatch(job_id):
     flash('搶單任務已取消')
     return redirect(url_for('admin_order_detail', order_id=job.order_id))
 
-@app.route('/admin/dispatch')
-@admin_required
-
 def push_dispatch_to_group(order, job):
     """推播搶單通知到司機群組"""
     if not DRIVER_GROUP_ID:
