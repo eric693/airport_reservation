@@ -309,6 +309,12 @@
           <textarea id="msgInput" name="message" rows="4"
             style="width:100%;padding:10px;border:1px solid #E2E8F0;border-radius:8px;font-size:14px;resize:vertical;margin-bottom:10px"
             placeholder="輸入要傳給客人的訊息...&#10;（系統會自動加上「【樂高客服】」前綴）"></textarea>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <input type="checkbox" name="release_human_mode" value="1" id="releaseHuman" style="accent-color:#4A9B8F">
+            <label for="releaseHuman" style="font-size:13px;color:#718096;cursor:pointer">
+              發送後恢復 AI 客服（解除真人客服模式）
+            </label>
+          </div>
           <button type="submit" class="btn btn-primary" style="width:100%">
             發送 LINE 訊息給客人
           </button>

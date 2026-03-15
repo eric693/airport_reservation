@@ -729,6 +729,7 @@ def admin_send_message(order_id):
         flash('此訂單為人工建立，無 LINE User ID，無法發送訊息')
         return redirect(url_for('admin_order_detail', order_id=order_id))
 
+    release = request.form.get('release_human_mode') == '1'
     try:
         full_msg = f'【樂高客服】\n\n{msg}\n\n如有疑問請回覆此訊息，感謝您。'
         with ApiClient(configuration) as api_client:
@@ -738,10 +739,17 @@ def admin_send_message(order_id):
                     messages=[TextMessage(text=full_msg)]
                 )
             )
-        flash(f'✅ 訊息已成功發送給客人（訂單 #{order_id}）')
+        # 若勾選「解除真人客服模式」，恢復 AI 客服
+        if release:
+            uid = order.line_user_id
+            if uid in user_sessions and user_sessions[uid].get('step') == 'human_mode':
+                user_sessions[uid] = {'step': 'ai_chat'}
+            flash(f'訊息已發送，已恢復 AI 客服模式（訂單 #{order_id}）')
+        else:
+            flash(f'訊息已成功發送給客人（訂單 #{order_id}）')
     except Exception as e:
         app.logger.error(f'admin_send_message error: {e}')
-        flash(f'❌ 發送失敗：{str(e)[:100]}')
+        flash(f'發送失敗：{str(e)[:100]}')
     return redirect(url_for('admin_order_detail', order_id=order_id))
 
 @app.route('/admin/order/<int:order_id>/status', methods=['POST'])
@@ -2036,10 +2044,22 @@ def _handle_message_inner(event):
         reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
         return
 
+    if step == 'human_mode':
+        # 真人客服模式：AI 靜默，客人輸入「預約」可重新進入預約流程
+        if any(kw in text for kw in ['預約', '訂車', '我要訂', '我想訂', '幫我訂']):
+            user_sessions[user_id] = {'step': 'choose_service'}
+            reply_text(event.reply_token, '好的！幫您切換到預約流程。')
+            send_service_menu(event.reply_token)
+        elif any(kw in text for kw in ['查詢', '我的訂單', '訂單狀態']):
+            user_sessions[user_id] = {'step': 'query_name'}
+            reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
+        # 其餘訊息靜默，等真人客服回應
+        return
+
     if step == 'ai_chat':
         if any(kw in text for kw in ['預約', '訂車', '我要訂', '我想訂', '幫我訂']):
             user_sessions[user_id] = {'step': 'choose_service'}
-            reply_text(event.reply_token, '好的！幫您切換到預約流程 ✈️')
+            reply_text(event.reply_token, '好的！幫您切換到預約流程。')
             send_service_menu(event.reply_token)
             return
         if any(kw in text for kw in ['查詢', '我的訂單', '訂單狀態']):
@@ -2419,8 +2439,10 @@ def _handle_postback_inner(event):
     elif data == 'request_human':
         # 推播通知真人客服
         notify_human_agent(user_id)
+        # 標記為真人客服模式，AI 暫停回應
+        user_sessions[user_id] = {'step': 'human_mode'}
         reply_text(event.reply_token,
-            '✅ 已通知真人客服！\n\n'
+            '已通知真人客服！\n\n'
             '客服人員收到通知後將主動與您聯繫，請稍候。\n\n'
             '如有急事，可以撥打 04-26318898、0968685835'
         )
@@ -2982,9 +3004,9 @@ AI_SYSTEM_PROMPT = """你是「機場接送服務」的親切客服助理，名�
 
 【人數與行李超載說明】
 - 標準容量：最多 7 人、最多 7 件標準 29 吋行李，保證載得下。
-- 第 8 位乘客：加收 NT$400。
+- 第 8 位乘客：加收 NT$400（最多含司機共 9 人，客人最多 8 人）。
 - 若超過 7 人或 7 件，以該調度車款的後行李箱實際空間為準，超過載不下須自行負責。
-- 若被問到 8 位或以上費用，請說明加收 NT$400 並建議事先告知人數。
+- 若被問到 8 人或 9 人費用：說明客人最多 8 人，第 8 位加收 NT$400，含司機共 9 人。
 
 【公司資訊】
 - 公司名稱：樂高小客車租賃有限公司（Le Gao Car Rental Co., Ltd.）
@@ -3022,8 +3044,8 @@ A：以下為不指定車款優惠活動參考車款，全部為無菸車，一�
 Q4b 車型可以選擇嗎？
 A：可以指定車型，您提供給我人數跟行李件數，好讓我報指定車款可以乘載的車款報價給您。
 
-Q5 行李有數量限制嗎？
-A：我們規定是七人七件標準式大行李絕對載得下，如有超過會依照該車款後行李箱載的下為主，如因超過載不下要自負。
+Q5 行李有數量限制嗎？人數上限是幾人？
+A：我們規定是七人七件標準式大行李絕對載得下。客人最多 8 人（含司機共 9 人），第 8 位乘客加收 NT$400。如有超過會依照該車款後行李箱載得下為主，如因超過載不下要自負。
 
 Q6 小孩需要安全座椅嗎？可以提供嗎？
 A：安全座椅／增高墊加收 NT$200／座，請提供幾歲用的。
