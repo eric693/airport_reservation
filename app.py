@@ -2192,9 +2192,9 @@ def _handle_message_inner(event):
             fn_nz = _re2.sub(r'^([A-Z]{1,3})0+([0-9]+)$', r'\1\2', fn)
             if not AVIATION_EDGE_KEY:
                 # 無 API Key → 直接繼續
-                session['step'] = 'input_note'
+                session['step'] = 'ask_child_seat'
                 user_sessions[user_id] = session
-                reply_text(event.reply_token, '請輸入備註事項（若無請輸入「無」）：')
+                send_child_seat_menu(event.reply_token)
             else:
                 # 有 API Key → reply「查詢中」，背景查詢
                 reply_text(event.reply_token, f'正在查詢 {fn} 的航班資訊，請稍候...')
@@ -2208,35 +2208,27 @@ def _handle_message_inner(event):
                             user_sessions[uid] = s
                             _push_flight_confirm(uid, f, finfo)
                         else:
-                            s['step'] = 'input_note'
+                            s['step'] = 'ask_child_seat'
                             user_sessions[uid] = s
                             with ApiClient(configuration) as api_client:
                                 MessagingApi(api_client).push_message(
                                     PushMessageRequest(to=uid,
-                                        messages=[TextMessage(text=f'查無 {f} 在 {d} 的航班資訊，已記錄號碼，請繼續填寫備註。')])
+                                        messages=[TextMessage(text=f'查無 {f} 的航班資訊，已記錄號碼，繼續下一步。')])
                                 )
-                            with ApiClient(configuration) as api_client:
-                                MessagingApi(api_client).push_message(
-                                    PushMessageRequest(to=uid,
-                                        messages=[TextMessage(text='請輸入備註事項（若無請輸入「無」）：')])
-                                )
+                            _push_child_seat_menu(uid)
                     except Exception as e:
                         app.logger.error(f'flight query error: {e}')
-                        s['step'] = 'input_note'
+                        s['step'] = 'ask_child_seat'
                         user_sessions[uid] = s
-                        with ApiClient(configuration) as api_client:
-                            MessagingApi(api_client).push_message(
-                                PushMessageRequest(to=uid,
-                                    messages=[TextMessage(text='請輸入備註事項（若無請輸入「無」）：')])
-                            )
+                        _push_child_seat_menu(uid)
                 threading.Thread(target=_do_query, daemon=True).start()
 
 
     elif step == 'confirm_flight':
         if text in ['確認', '對', 'yes', 'YES', 'Yes', '是']:
-            session['step'] = 'input_note'
+            session['step'] = 'ask_child_seat'
             user_sessions[user_id] = session
-            reply_text(event.reply_token, '請輸入備註事項（若無請輸入「無」）：')
+            send_child_seat_menu(event.reply_token)
         else:
             session['step'] = 'input_flight'
             user_sessions[user_id] = session
@@ -2629,12 +2621,21 @@ def _build_flight_bubble(flight_number, finfo):
     dep_time = finfo.get('dep_scheduled') or finfo.get('dep_estimated') or ''
     arr_time = finfo.get('arr_scheduled') or finfo.get('arr_estimated') or ''
 
-    # 只取 HH:MM 部分顯示
+    # 只取 HH:MM 部分顯示（支援 ISO 8601: 2026-03-14T04:00:00.000 和 空格格式）
     def hhmm(t):
         if not t: return '未提供'
         try:
-            parts = t.split(' ')
-            return parts[-1][:5] if len(parts) > 1 else t[11:16] if len(t) > 10 else t
+            # ISO 格式：2026-03-14T04:00:00.000 → 取 T 後面的 HH:MM
+            if 'T' in t:
+                return t.split('T')[1][:5]
+            # 空格格式：2026-03-14 04:00 → 取空格後面
+            if ' ' in t:
+                return t.split(' ')[1][:5]
+            # 純時間：04:00
+            if len(t) <= 5:
+                return t
+            # 其他：取後段
+            return t[11:16] if len(t) > 10 else t
         except Exception:
             return t
 
@@ -3180,20 +3181,19 @@ def build_quote_from_session(session):
 
     if extra_stops:
         # ── 防投機邏輯：有停靠點時，強制以「最後一個停靠點」為終點計算報價 ──
-        # 避免客人用便宜起點+多點加停規避較遠/偏遠區域的正確報價
         last_stop = extra_stops[-1]
-        o.pickup_location = last_stop  # 終點改為最後停靠點
-        o.extra_stop_fee  = 0          # 不另加多點費（已含在終點報價內）
+        o.pickup_location = last_stop
+        o.extra_stop_fee  = 0
         quote = calculate_quote(o)
-        # 明細標示：顯示實際起點與所有途經點
         stops_label = '、'.join([origin] + extra_stops[:-1]) if len(extra_stops) > 1 else origin
         if quote['breakdown']:
             quote['breakdown'][0]['label'] = f'基本車資（途經 {stops_label}）'
-        elif quote['total'] == 0:
-            # 查無報價規則，保留多點費用告知客人
-            quote['breakdown'].append({'label': f'多點加收（終點：{last_stop}）',
-                                        'amount': session.get('extra_stop_fee', 0)})
-            quote['total'] += session.get('extra_stop_fee', 0)
+        # 多點加收費用另外加入明細
+        stop_fee = session.get('extra_stop_fee', 0)
+        if stop_fee:
+            quote['breakdown'].append({'label': f'多點停靠加收（{len(extra_stops)} 點）', 'amount': stop_fee})
+            quote['surcharges'].append({'label': '多點停靠加收', 'amount': stop_fee})
+            quote['total'] += stop_fee
         return quote
 
     quote = calculate_quote(o)
