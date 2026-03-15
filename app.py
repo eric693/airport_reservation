@@ -1073,6 +1073,8 @@ def push_dispatch_to_group(order, job):
     except Exception as e:
         app.logger.error('push_dispatch_to_group error: ' + str(e))
 
+@app.route('/admin/dispatch')
+@admin_required
 def admin_dispatch_list():
     sort      = request.args.get('sort', 'booking_date')
     dir_      = request.args.get('dir', 'asc')
