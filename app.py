@@ -2129,8 +2129,10 @@ def _handle_message_inner(event):
             reply_text(event.reply_token, '時間格式錯誤，請重新輸入，例如：08:30')
 
     elif step == 'input_passengers':
-        if text.isdigit() and 1 <= int(text) <= 20:
-            session['passengers'] = text
+        import re as _re
+        _m = _re.search(r'([0-9]+)', text)  # 擷取任何數字，相容「4人」「6 人」等格式
+        if _m and 1 <= int(_m.group(1)) <= 20:
+            session['passengers'] = _m.group(1)
             session['step'] = 'input_luggage'
             user_sessions[user_id] = session
             reply_text(event.reply_token, '請輸入行李件數，最多7件（數字）：')
@@ -2138,8 +2140,10 @@ def _handle_message_inner(event):
             reply_text(event.reply_token, '請輸入有效的乘客人數（1-20）：')
 
     elif step == 'input_luggage':
-        if text.isdigit():
-            session['luggage'] = text
+        import re as _re
+        _m = _re.search(r'([0-9]+)', text)  # 相容「3件」「2個」等格式
+        if _m:
+            session['luggage'] = _m.group(1)
             session['step'] = 'input_name'
             user_sessions[user_id] = session
             reply_text(event.reply_token, '請輸入您的中文姓名：')
