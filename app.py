@@ -556,6 +556,37 @@ def ping():
     return 'pong'
 
 # ── Admin: Orders ────────────────────────────────────────────────────
+@app.route('/admin/ai', methods=['GET'])
+@admin_required
+def admin_ai_control():
+    # 列出目前所有 human_mode 的用戶
+    paused = [uid for uid, s in user_sessions.items() if s.get('step') == 'human_mode']
+    return render_template('admin/ai_control.html', paused=paused)
+
+@app.route('/admin/ai/pause/direct', methods=['POST'])
+@admin_required
+def admin_ai_pause_direct():
+    uid = request.form.get('line_user_id', '').strip()
+    next_url = request.form.get('next', '/admin/ai')
+    if uid:
+        user_sessions[uid] = {'step': 'human_mode'}
+        flash(f'已暫停 AI 客服：{uid}')
+    else:
+        flash('請輸入有效的 LINE User ID')
+    return redirect(next_url)
+
+@app.route('/admin/ai/resume/direct', methods=['POST'])
+@admin_required
+def admin_ai_resume_direct():
+    uid = request.form.get('line_user_id', '').strip()
+    next_url = request.form.get('next', '/admin/ai')
+    if uid:
+        user_sessions[uid] = {'step': 'ai_chat'}
+        flash(f'已恢復 AI 客服：{uid}')
+    else:
+        flash('請輸入有效的 LINE User ID')
+    return redirect(next_url)
+
 @app.route('/admin')
 @admin_required
 def admin_index():
