@@ -2311,7 +2311,7 @@ def _handle_message_inner(event):
             session['step'] = 'input_date'
             session['_push_travel_on_date'] = True
             user_sessions[user_id] = session
-            reply_text(event.reply_token, '請輸入接送日期（格式：2025-06-15）：')
+            reply_text(event.reply_token, f'請輸入接送日期（格式：{datetime.now().strftime("%Y-%m-%d")}）：')
 
     else:
         if OPENAI_API_KEY:
@@ -2509,7 +2509,7 @@ def _handle_postback_inner(event):
         session['step'] = 'input_date'
         session['_push_travel_on_date'] = True   # 收到日期後再 push 車程
         user_sessions[user_id] = session
-        reply_text(event.reply_token, '請輸入接送日期（格式：2025-06-15）：')
+        reply_text(event.reply_token, f'請輸入接送日期（格式：{datetime.now().strftime("%Y-%m-%d")}）：')
 
     elif data == 'add_extra_stop':
         session['step'] = 'input_extra_stop'
@@ -3124,12 +3124,25 @@ A：目前不指定車款優惠活動不加收夜間費用，請放心預約！
 Q20 請問有收據或預約完成證明嗎？
 A：我們無法提供收據，如需開立發票會加收 5% 費用，謝謝您！
 
+Q21 當天價格還會異動嗎？
+A：現在預約完成，依照上述費用就不會再有變動，請放心！謝謝您。
+
+Q22 如何分享給朋友或家人預約？
+A：您好！只要分享我們的官方 LINE 帳號給他們，就可以直接預約囉！
+
+LINE ID：@taiwantop
+或點此連結加入：https://line.me/R/ti/p/@taiwantop
+
+加入後直接說「預約」就可以開始了，謝謝您！
+
 【回覆原則】
 - 全程使用繁體中文
 - 回覆要簡潔口語，不要太正式或太長
 - 若客人問具體訂單狀態，請他輸入「查詢訂單」由系統查詢
 - 若客人要預約，請他輸入「預約」進入預約流程
 - 不確定的資訊不要亂猜，誠實說不確定並建議聯繫客服
+- 不要自行計算或判斷七天內加收費用，一律請客人輸入「預約」進入系統，由系統自動計算所有費用
+- 若客人提供預約資料詢問費用，不要幫客人整理確認單或計算加收費用，直接請他輸入「預約」讓系統處理
 """
 
 def ask_openai(user_id, user_message, order_context=None):
