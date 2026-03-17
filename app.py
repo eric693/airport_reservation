@@ -1046,7 +1046,7 @@ def push_dispatch_to_group(order, job):
     try:
         fee_line = ('車資：NT${:,}'.format(job.driver_fee)) if job.driver_fee else '車資：請洽調度'
         msg = '\n'.join([
-            '【新訂單搶單】',
+            '【樂高預約單】',
             '訂單 #' + str(order.id),
             '─────────────',
             '服務：' + order.service_name,
@@ -1126,7 +1126,7 @@ def push_dispatch_to_driver(driver, order, job):
         "header": {
             "type": "box", "layout": "vertical", "backgroundColor": "#1A2B4A",
             "contents": [
-                {"type": "text", "text": "新訂單搶單通知", "color": "#FFFFFF", "size": "lg", "weight": "bold", "wrap": True},
+                {"type": "text", "text": "樂高搶單通知", "color": "#FFFFFF", "size": "lg", "weight": "bold", "wrap": True},
                 {"type": "text", "text": f"訂單 #{order.id}　第一個搶到確認！", "color": "#8BA3C7", "size": "sm", "wrap": True}
             ]
         },
@@ -1165,7 +1165,7 @@ def push_dispatch_to_driver(driver, order, job):
         MessagingApi(api_client).push_message(
             PushMessageRequest(
                 to=driver.line_user_id,
-                messages=[FlexMessage(alt_text=f'新訂單搶單 #{order.id}', contents=FlexContainer.from_dict(bubble))]
+                messages=[FlexMessage(alt_text=f'樂高預約單 #{order.id}', contents=FlexContainer.from_dict(bubble))]
             )
         )
 
