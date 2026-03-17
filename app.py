@@ -1615,28 +1615,15 @@ def send_quote_to_customer(order):
     except Exception:
         pass
 
-    if extra_stops:
-        # 防投機：強制以最後停靠點為終點計算報價
-        last_stop = extra_stops[-1]
-        original_pickup = order.pickup_location
-        order.pickup_location = last_stop
-        order.extra_stop_fee  = 0
-        quote = calculate_quote(order)
-        order.pickup_location = original_pickup
-        if quote['breakdown']:
-            stops_label = '、'.join([original_pickup] + extra_stops[:-1]) if len(extra_stops) > 1 else original_pickup
-            quote['breakdown'][0]['label'] = f'基本車資（途經 {stops_label}）'
-        if quote['base_price'] == 0:
-            return
-        _send_quote_bubble(order, quote)
-        return
-
     quote = calculate_quote(order)
+
     if order.extra_stop_fee:
-        quote['breakdown'].append({'label': '多點加收', 'amount': order.extra_stop_fee})
+        quote['breakdown'].append({'label': f'多點停靠加收（{len(extra_stops)} 點）' if extra_stops else '多點加收', 'amount': order.extra_stop_fee})
         quote['total'] += order.extra_stop_fee
+
     if quote['base_price'] == 0:
         return
+
     _send_quote_bubble(order, quote)
 
 
@@ -3204,7 +3191,7 @@ def build_quote_from_session(session):
         pass
     o = FakeOrder()
     o.airport          = session.get('airport', '')
-    o.pickup_location  = session.get('pickup', '')
+    o.pickup_location  = session.get('pickup', '')  # 永遠用出發地比對報價
     o.night_fee        = session.get('night_fee', False)
     o.sign_board       = session.get('sign_board', False)
     o.child_seat_count = session.get('child_seat_count', 0)
@@ -3214,36 +3201,26 @@ def build_quote_from_session(session):
     o._8th_guest_fee   = session.get('8th_guest_fee', 0)
 
     extra_stops = session.get('extra_stops', [])
-    origin = session.get('pickup', '')
-
-    if extra_stops:
-        # ── 防投機邏輯：有停靠點時，強制以「最後一個停靠點」為終點計算報價 ──
-        last_stop = extra_stops[-1]
-        o.pickup_location = last_stop
-        o.extra_stop_fee  = 0
-        quote = calculate_quote(o)
-        stops_label = '、'.join([origin] + extra_stops[:-1]) if len(extra_stops) > 1 else origin
-        if quote['breakdown']:
-            quote['breakdown'][0]['label'] = f'基本車資（途經 {stops_label}）'
-        # 多點加收費用另外加入明細
-        stop_fee = session.get('extra_stop_fee', 0)
-        if stop_fee:
-            quote['breakdown'].append({'label': f'多點停靠加收（{len(extra_stops)} 點）', 'amount': stop_fee})
-            quote['surcharges'].append({'label': '多點停靠加收', 'amount': stop_fee})
-            quote['total'] += stop_fee
-        return quote
 
     quote = calculate_quote(o)
-    if o.extra_stop_fee:
-        quote['surcharges'].append({'label': '多點加收', 'amount': o.extra_stop_fee})
-        quote['breakdown'].append({'label': '多點加收', 'amount': o.extra_stop_fee})
+
+    # 多點停靠加收
+    if extra_stops and o.extra_stop_fee:
+        quote['breakdown'].append({'label': f'多點停靠加收（{len(extra_stops)} 點）', 'amount': o.extra_stop_fee})
+        quote['surcharges'].append({'label': '多點停靠加收', 'amount': o.extra_stop_fee})
         quote['total'] += o.extra_stop_fee
+    elif o.extra_stop_fee:
+        quote['breakdown'].append({'label': '多點加收', 'amount': o.extra_stop_fee})
+        quote['surcharges'].append({'label': '多點加收', 'amount': o.extra_stop_fee})
+        quote['total'] += o.extra_stop_fee
+
+    # 第八位貴賓加收
     if getattr(o, '_8th_guest_fee', 0):
         quote['surcharges'].append({'label': '第八位貴賓加收', 'amount': o._8th_guest_fee})
         quote['breakdown'].append({'label': '第八位貴賓加收', 'amount': o._8th_guest_fee})
         quote['total'] += o._8th_guest_fee
-    return quote
 
+    return quote
 
 def send_order_confirm(reply_token, session):
     extras = []
