@@ -2106,7 +2106,8 @@ def _handle_message_inner(event):
         send_main_menu(event.reply_token)
         return
 
-    if text in ['開始', 'hi', 'Hi', 'HI', 'hello', 'Hello', '你好', '哈囉'] and not step:
+    if text in ['開始', 'hi', 'Hi', 'HI', 'hello', 'Hello', '你好', '哈囉', '選單', '主選單', 'menu', 'Menu']:
+        user_sessions.pop(user_id, None)
         send_main_menu(event.reply_token)
         return
 
