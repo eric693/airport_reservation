@@ -490,10 +490,15 @@
 
           <form method="POST" action="/admin/order/{{ order.id }}/assign">
             <label class="form-label">選擇司機</label>
-            <select name="driver_id">
+            <input type="text" id="driverSearch" placeholder="輸入姓名或車牌搜尋..."
+              style="margin-bottom:6px;border-radius:6px;border:1px solid #E2E8F0;padding:8px 12px;font-size:14px;width:100%"
+              oninput="filterDrivers(this.value)">
+            <select name="driver_id" id="driverSelect" size="5"
+              style="height:auto;min-height:80px;border-radius:6px;border:1px solid #E2E8F0;width:100%;font-size:14px;margin-bottom:12px">
               <option value="">— 選擇司機 —</option>
               {% for driver in drivers %}
-              <option value="{{ driver.id }}" {% if order.driver_id == driver.id %}selected{% endif %}>
+              <option value="{{ driver.id }}" {% if order.driver_id == driver.id %}selected{% endif %}
+                data-name="{{ driver.name }}" data-plate="{{ driver.car_plate }}">
                 {{ driver.name }}（{{ driver.car_plate }}）
               </option>
               {% endfor %}
@@ -535,6 +540,19 @@
     </div>
   </div>
 </div>
+
+<script>
+  function filterDrivers(keyword) {
+    const kw = keyword.toLowerCase();
+    const select = document.getElementById('driverSelect');
+    Array.from(select.options).forEach(opt => {
+      if (!opt.value) { opt.style.display = ''; return; }
+      const name  = (opt.dataset.name  || '').toLowerCase();
+      const plate = (opt.dataset.plate || '').toLowerCase();
+      opt.style.display = (name.includes(kw) || plate.includes(kw)) ? '' : 'none';
+    });
+  }
+  </script>
 
 </body>
 </html>
