@@ -1555,14 +1555,14 @@ def calculate_quote(order):
         booking = date.fromisoformat(order.booking_date)
         today = date.today()
         days_ahead = (booking - today).days
-        if days_ahead <= 7 and 'short_book' in surcharge_map:
+        if 4 <= days_ahead <= 7 and 'short_book' in surcharge_map:
             amt = surcharge_map['short_book'].amount
-            result['surcharges'].append({'label': surcharge_map['short_book'].name, 'amount': amt})
-            result['breakdown'].append({'label': surcharge_map['short_book'].name, 'amount': amt})
-        if days_ahead <= 3 and 'urgent' in surcharge_map:
-            amt = surcharge_map['urgent'].amount
-            result['surcharges'].append({'label': surcharge_map['urgent'].name, 'amount': amt})
-            result['breakdown'].append({'label': surcharge_map['urgent'].name, 'amount': amt})
+            result['surcharges'].append({'label': '四至七天內預約加收', 'amount': amt})
+            result['breakdown'].append({'label': '四至七天內預約加收', 'amount': amt})
+        elif 2 <= days_ahead <= 3 and 'short_book' in surcharge_map and 'urgent' in surcharge_map:
+            amt = surcharge_map['short_book'].amount + surcharge_map['urgent'].amount
+            result['surcharges'].append({'label': '二至三天內預約加收', 'amount': amt})
+            result['breakdown'].append({'label': '二至三天內預約加收', 'amount': amt})
     except Exception:
         pass
 
@@ -2090,11 +2090,10 @@ def _handle_message_inner(event):
             days_ahead = (dt.date() - _date.today()).days
             if days_ahead < 0:
                 reply_text(event.reply_token, '日期已過期，請重新輸入，例如：' + datetime.now().strftime('%Y-%m-%d'))
-            elif days_ahead < 8:
+            elif days_ahead <= 1:
                 reply_text(event.reply_token,
-                    f'⚠️ 線上預約系統僅開放 8 天後以上的日期。\n\n'
-                    f'7 天內預約請直接聯繫客服，由真人為您服務，謝謝！\n\n'
-                    f'請重新輸入 8 天後的日期（格式：{datetime.now().strftime("%Y-%m-%d")}）：'
+                    f'⚠️ 當天及前一天的預約請直接聯繫真人客服處理，謝謝！\n\n'
+                    f'如有急事，可以撥打 04-26318898、0968685835'
                 )
             elif days_ahead > 240:
                 reply_text(event.reply_token,
@@ -2122,38 +2121,36 @@ def _handle_message_inner(event):
             session['step'] = 'input_passengers'
             user_sessions[user_id] = session
             night_msg = ''
-            reply_text(event.reply_token, f'已記錄時間：{text}{night_msg}\n\n請輸入乘客人數，最多7人（數字）：')
+            reply_text(event.reply_token, f'已記錄時間：{text}\n\n請輸入乘客人數（請輸入 1-7 單一數字）：')
         except ValueError:
             reply_text(event.reply_token, '時間格式錯誤，請重新輸入，例如：08:30')
 
     elif step == 'input_passengers':
         import re as _re
         _m = _re.search(r'([0-9]+)', text)
-        if _m and 1 <= int(_m.group(1)) <= 20:
+        if _m and 1 <= int(_m.group(1)) <= 7:
             session['passengers'] = _m.group(1)
-            if int(_m.group(1)) == 7:
-                session['step'] = 'ask_8th_guest'
-                user_sessions[user_id] = session
-                send_8th_guest_menu(event.reply_token)
-            else:
-                session['8th_guest'] = False
-                session['8th_guest_fee'] = 0
-                session['step'] = 'input_luggage'
-                user_sessions[user_id] = session
-                reply_text(event.reply_token, '請輸入行李件數，最多7件（數字）：')
+            session['8th_guest'] = False
+            session['8th_guest_fee'] = 0
+            session['step'] = 'input_luggage'
+            user_sessions[user_id] = session
+            reply_text(event.reply_token, '請輸入行李件數，最多 7 件（含推車），請輸入 1-7 單一數字：')
         else:
-            reply_text(event.reply_token, '請輸入有效的乘客人數（1-20）：')
+            reply_text(event.reply_token,
+                '⚠️ 考量貴賓們有寬敞舒適的體驗，最多 7 人 7 件，恕不開放第八位貴賓。\n\n'
+                '請輸入 1-7 的數字：'
+            )
 
     elif step == 'input_luggage':
         import re as _re
         _m = _re.search(r'([0-9]+)', text)  # 相容「3件」「2個」等格式
-        if _m:
+        if _m and 1 <= int(_m.group(1)) <= 7:
             session['luggage'] = _m.group(1)
             session['step'] = 'input_name'
             user_sessions[user_id] = session
             reply_text(event.reply_token, '請輸入您的中文姓名：')
         else:
-            reply_text(event.reply_token, '請輸入有效的行李件數（數字）：')
+            reply_text(event.reply_token, '請輸入有效的行李件數（1-7）：')
 
     elif step == 'input_name':
         session['name'] = text
