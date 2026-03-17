@@ -319,6 +319,21 @@
           <div style="font-size:12px;color:#718096;margin-bottom:6px">
             客人 LINE ID：<code style="background:#EDF2F7;padding:2px 6px;border-radius:4px;font-size:11px">{{ order.line_user_id }}</code>
           </div>
+          <div style="display:flex;gap:8px;margin-bottom:12px">
+            {% set ai_step = '' %}
+            <form method="POST" action="/admin/ai/pause/{{ order.line_user_id }}">
+              <input type="hidden" name="next" value="{{ request.url }}">
+              <button type="submit" class="btn btn-warn" style="font-size:12px;padding:6px 12px">
+                ⏸ 暫停 AI
+              </button>
+            </form>
+            <form method="POST" action="/admin/ai/resume/{{ order.line_user_id }}">
+              <input type="hidden" name="next" value="{{ request.url }}">
+              <button type="submit" class="btn btn-primary" style="font-size:12px;padding:6px 12px">
+                ▶ 恢復 AI
+              </button>
+            </form>
+          </div>
         </div>
         <div style="padding:0 24px;margin-bottom:12px">
           <div style="font-size:11px;font-weight:600;color:#A0AEC0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">快速訊息</div>

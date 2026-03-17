@@ -766,6 +766,22 @@ def admin_send_message(order_id):
         flash(f'發送失敗：{str(e)[:100]}')
     return redirect(url_for('admin_order_detail', order_id=order_id))
 
+@app.route('/admin/ai/pause/<line_user_id>', methods=['POST'])
+@admin_required
+def admin_ai_pause(line_user_id):
+    user_sessions[line_user_id] = {'step': 'human_mode'}
+    flash(f'已暫停 AI 客服（{line_user_id[:12]}...）')
+    next_url = request.form.get('next') or url_for('admin_index')
+    return redirect(next_url)
+
+@app.route('/admin/ai/resume/<line_user_id>', methods=['POST'])
+@admin_required
+def admin_ai_resume(line_user_id):
+    user_sessions[line_user_id] = {'step': 'ai_chat'}
+    flash(f'已恢復 AI 客服（{line_user_id[:12]}...）')
+    next_url = request.form.get('next') or url_for('admin_index')
+    return redirect(next_url)
+
 @app.route('/admin/order/<int:order_id>/status', methods=['POST'])
 @admin_required
 def admin_update_status(order_id):
