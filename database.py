@@ -185,3 +185,16 @@ class SiteSetting(db.Model):
         else:
             db.session.add(cls(key=key, value=value))
         db.session.commit()
+
+
+class LineVisitor(db.Model):
+    """LINE 訪客紀錄"""
+    __tablename__ = 'line_visitors'
+
+    id = db.Column(db.Integer, primary_key=True)
+    line_user_id = db.Column(db.String(100), unique=True, nullable=False)
+    display_name = db.Column(db.String(100), default='')
+    picture_url = db.Column(db.String(300), default='')
+    first_seen = db.Column(db.DateTime, default=datetime.utcnow)
+    last_seen = db.Column(db.DateTime, default=datetime.utcnow)
+    message_count = db.Column(db.Integer, default=0)

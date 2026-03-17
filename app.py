@@ -21,7 +21,7 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, PostbackEvent
 from apscheduler.schedulers.background import BackgroundScheduler
-from database import db, Order, Driver, VehicleType, AirportOption, DispatchJob, DispatchResponse, PriceRule, PriceSurcharge, HolidaySurcharge, SiteSetting
+from database import db, Order, Driver, VehicleType, AirportOption, DispatchJob, DispatchResponse, PriceRule, PriceSurcharge, HolidaySurcharge, SiteSetting, LineVisitor
 from functools import wraps
 
 app = Flask(__name__)
@@ -64,6 +64,7 @@ with app.app_context():
         "CREATE TABLE IF NOT EXISTS price_rules (id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL, airport_keyword VARCHAR(50) DEFAULT '', region_keyword VARCHAR(100) DEFAULT '', base_price INTEGER DEFAULT 0, note TEXT DEFAULT '', active BOOLEAN DEFAULT TRUE, sort_order INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT NOW())",
         "CREATE TABLE IF NOT EXISTS price_surcharges (id SERIAL PRIMARY KEY, key VARCHAR(50) UNIQUE NOT NULL, name VARCHAR(50) NOT NULL, amount INTEGER DEFAULT 0, enabled BOOLEAN DEFAULT TRUE, note VARCHAR(100) DEFAULT '')",
         "CREATE TABLE IF NOT EXISTS holiday_surcharges (id SERIAL PRIMARY KEY, name VARCHAR(50) DEFAULT '', date_from VARCHAR(10) NOT NULL, date_to VARCHAR(10) NOT NULL, amount INTEGER DEFAULT 300, active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS line_visitors (id SERIAL PRIMARY KEY, line_user_id VARCHAR(100) UNIQUE NOT NULL, display_name VARCHAR(100) DEFAULT '', picture_url VARCHAR(300) DEFAULT '', first_seen TIMESTAMP DEFAULT NOW(), last_seen TIMESTAMP DEFAULT NOW(), message_count INTEGER DEFAULT 0)",
     ]
     with db.engine.connect() as _conn:
         for _sql in _migrations:
@@ -562,6 +563,12 @@ def admin_ai_control():
     # 列出目前所有 human_mode 的用戶
     paused = [uid for uid, s in user_sessions.items() if s.get('step') == 'human_mode']
     return render_template('admin/ai_control.html', paused=paused)
+
+@app.route('/admin/visitors')
+@admin_required
+def admin_visitors():
+    visitors = LineVisitor.query.order_by(LineVisitor.last_seen.desc()).all()
+    return render_template('admin/visitors.html', visitors=visitors)
 
 @app.route('/admin/ai/pause/direct', methods=['POST'])
 @admin_required
@@ -2037,6 +2044,33 @@ def handle_message(event):
 
 def _handle_message_inner(event):
     user_id = event.source.user_id
+    # 記錄訪客
+    if event.source.type == 'user':
+        try:
+            visitor = LineVisitor.query.filter_by(line_user_id=user_id).first()
+            if not visitor:
+                display_name = ''
+                picture_url = ''
+                try:
+                    with ApiClient(configuration) as _ac:
+                        profile = MessagingApi(_ac).get_profile(user_id)
+                        display_name = profile.display_name or ''
+                        picture_url = getattr(profile, 'picture_url', '') or ''
+                except Exception:
+                    pass
+                visitor = LineVisitor(
+                    line_user_id=user_id,
+                    display_name=display_name,
+                    picture_url=picture_url,
+                )
+                db.session.add(visitor)
+            else:
+                visitor.last_seen = datetime.utcnow()
+            visitor.message_count = (visitor.message_count or 0) + 1
+            db.session.commit()
+        except Exception as _e:
+            app.logger.warning(f'visitor log error: {_e}')
+        
     text = event.message.text.strip()
     session = user_sessions.get(user_id, {})
     step = session.get('step', '')

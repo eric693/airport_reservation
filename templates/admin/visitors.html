@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>訪客紀錄</title>
+<style>
+  body { font-family:'Segoe UI','PingFang TC',sans-serif; background:#F4F6F8; margin-left:220px; padding:32px; }
+  h2 { color:#1A2B4A; margin-bottom:20px; }
+  .card { background:#fff; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,0.07); overflow:hidden; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { background:#F7FAFC; padding:10px 16px; text-align:left; color:#718096; font-weight:600; font-size:11px; text-transform:uppercase; border-bottom:1px solid #EDF2F7; }
+  td { padding:10px 16px; border-bottom:1px solid #EDF2F7; color:#2D3748; vertical-align:middle; }
+  tr:last-child td { border-bottom:none; }
+  .avatar { width:32px; height:32px; border-radius:50%; object-fit:cover; }
+  .avatar-placeholder { width:32px; height:32px; border-radius:50%; background:#E2E8F0; display:inline-flex; align-items:center; justify-content:center; color:#A0AEC0; font-size:14px; }
+  code { background:#EDF2F7; padding:2px 6px; border-radius:4px; font-size:11px; }
+  .btn { padding:5px 10px; border-radius:4px; font-size:11px; font-weight:500; cursor:pointer; border:none; text-decoration:none; display:inline-block; }
+  .btn-pause { background:#FEF0E7; color:#E05C00; }
+  .btn-resume { background:#E6F5F3; color:#2C7A73; }
+  .flash { background:#E6F5F3; color:#2C7A73; padding:12px 16px; border-radius:8px; margin-bottom:16px; font-size:14px; }
+  .sidebar { position:fixed; top:0; left:0; width:220px; height:100vh; background:#1A2B4A; }
+  .search-bar { margin-bottom:16px; }
+  .search-bar input { padding:8px 12px; border:1px solid #E2E8F0; border-radius:6px; font-size:13px; width:280px; }
+</style>
+</head>
+<body>
+
+{% with messages = get_flashed_messages() %}
+{% if messages %}{% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}{% endif %}
+{% endwith %}
+
+<h2>訪客紀錄（共 {{ visitors|length }} 位）</h2>
+
+<div class="search-bar">
+  <input type="text" id="search" placeholder="搜尋名稱或 User ID..." oninput="filterTable(this.value)">
+</div>
+
+<div class="card">
+  <table id="visitorTable">
+    <thead>
+      <tr>
+        <th>頭像</th>
+        <th>顯示名稱</th>
+        <th>LINE User ID</th>
+        <th>訊息數</th>
+        <th>最後活躍</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in visitors %}
+      <tr>
+        <td>
+          {% if v.picture_url %}
+          <img src="{{ v.picture_url }}" class="avatar">
+          {% else %}
+          <div class="avatar-placeholder">👤</div>
+          {% endif %}
+        </td>
+        <td>{{ v.display_name or '未知' }}</td>
+        <td><code>{{ v.line_user_id }}</code></td>
+        <td>{{ v.message_count }}</td>
+        <td>{{ v.last_seen.strftime('%m/%d %H:%M') }}</td>
+        <td style="display:flex;gap:6px;flex-wrap:wrap">
+          <form method="POST" action="/admin/ai/pause/direct">
+            <input type="hidden" name="line_user_id" value="{{ v.line_user_id }}">
+            <input type="hidden" name="next" value="/admin/visitors">
+            <button type="submit" class="btn btn-pause">⏸ 暫停AI</button>
+          </form>
+          <form method="POST" action="/admin/ai/resume/direct">
+            <input type="hidden" name="line_user_id" value="{{ v.line_user_id }}">
+            <input type="hidden" name="next" value="/admin/visitors">
+            <button type="submit" class="btn btn-resume">▶ 恢復AI</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<br><a href="/admin" style="color:#4A9B8F;font-size:13px;">← 返回訂單管理</a>
+
+<script>
+function filterTable(kw) {
+  kw = kw.toLowerCase();
+  document.querySelectorAll('#visitorTable tbody tr').forEach(row => {
+    const text = row.innerText.toLowerCase();
+    row.style.display = text.includes(kw) ? '' : 'none';
+  });
+}
+</script>
+</body>
+</html>
