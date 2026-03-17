@@ -2129,12 +2129,19 @@ def _handle_message_inner(event):
 
     elif step == 'input_passengers':
         import re as _re
-        _m = _re.search(r'([0-9]+)', text)  # 擷取任何數字，相容「4人」「6 人」等格式
+        _m = _re.search(r'([0-9]+)', text)
         if _m and 1 <= int(_m.group(1)) <= 20:
             session['passengers'] = _m.group(1)
-            session['step'] = 'input_luggage'
-            user_sessions[user_id] = session
-            reply_text(event.reply_token, '請輸入行李件數，最多7件（數字）：')
+            if int(_m.group(1)) == 7:
+                session['step'] = 'ask_8th_guest'
+                user_sessions[user_id] = session
+                send_8th_guest_menu(event.reply_token)
+            else:
+                session['8th_guest'] = False
+                session['8th_guest_fee'] = 0
+                session['step'] = 'input_luggage'
+                user_sessions[user_id] = session
+                reply_text(event.reply_token, '請輸入行李件數，最多7件（數字）：')
         else:
             reply_text(event.reply_token, '請輸入有效的乘客人數（1-20）：')
 
@@ -2402,6 +2409,21 @@ def _handle_postback_inner(event):
         user_sessions[user_id] = session
         reply_text(event.reply_token, '寵物同行加收：NT$300\n\n請輸入備註事項（若無請輸入「無」）：')
 
+    elif data == 'guest_8th_yes':
+        session['8th_guest'] = True
+        session['8th_guest_fee'] = 400
+        session['passengers'] = str(int(session.get('passengers', 7)) + 1)
+        session['step'] = 'input_luggage'
+        user_sessions[user_id] = session
+        reply_text(event.reply_token, '已記錄第八位貴賓，加收 NT$400。\n\n請輸入行李件數，最多7件（數字）：')
+
+    elif data == 'guest_8th_no':
+        session['8th_guest'] = False
+        session['8th_guest_fee'] = 0
+        session['step'] = 'input_luggage'
+        user_sessions[user_id] = session
+        reply_text(event.reply_token, '請輸入行李件數，最多7件（數字）：')
+        
     elif data == 'pet_no':
         session['pet'] = False
         session['step'] = 'input_note'
@@ -2775,6 +2797,19 @@ def send_pet_menu(reply_token):
         ]}
     }
     send_flex(reply_token, '寵物同行', bubble)
+    
+def send_8th_guest_menu(reply_token):
+    bubble = {
+        "type": "bubble",
+        "header": header_box("第八位貴賓"),
+        "body": {"type": "box", "layout": "vertical", "contents": [
+            {"type": "text", "text": "是否有第八位貴賓同行？", "size": "md", "color": "#333333", "weight": "bold", "wrap": True},
+            {"type": "text", "text": "第八位乘客加收 NT$400，含司機共 9 人為上限。", "size": "xs", "color": "#888888", "margin": "sm", "wrap": True},
+            make_button("是，加收 NT$400", "guest_8th_yes", "primary"),
+            make_button("否，繼續", "guest_8th_no"),
+        ]}
+    }
+    send_flex(reply_token, '第八位貴賓', bubble)
 
 # ── 新功能 1：電子發票選單 ─────────────────────────────────────────────
 def send_invoice_menu(reply_token):
@@ -2824,7 +2859,8 @@ def _reply_time_hint(reply_token, session):
             '    晚上11點  → 23:00\n\n'
             '接機說明：\n'
             '我們以航班實際落地時間為主，\n'
-            '於航班落地後等待最多 90 分鐘。'
+            '於航班落地後等待最多 90 分鐘。\n\n'
+            '如是接機服務請直接填寫預計抵達時間。'
         )
     else:
         hint = (
@@ -2852,7 +2888,8 @@ def _push_time_hint(user_id, session):
             '    晚上11點  → 23:00\n\n'
             '接機說明：\n'
             '我們以航班實際落地時間為主，\n'
-            '於航班落地後等待最多 90 分鐘。'
+            '於航班落地後等待最多 90 分鐘。\n\n'
+            '如是接機服務請直接填寫預計抵達時間。'
         )
     else:
         hint = (
@@ -3174,6 +3211,7 @@ def build_quote_from_session(session):
     o.pet              = session.get('pet', False)
     o.booking_date     = session.get('date', '')
     o.extra_stop_fee   = session.get('extra_stop_fee', 0)
+    o._8th_guest_fee   = session.get('8th_guest_fee', 0)
 
     extra_stops = session.get('extra_stops', [])
     origin = session.get('pickup', '')
@@ -3200,6 +3238,10 @@ def build_quote_from_session(session):
         quote['surcharges'].append({'label': '多點加收', 'amount': o.extra_stop_fee})
         quote['breakdown'].append({'label': '多點加收', 'amount': o.extra_stop_fee})
         quote['total'] += o.extra_stop_fee
+    if getattr(o, '_8th_guest_fee', 0):
+        quote['surcharges'].append({'label': '第八位貴賓加收', 'amount': o._8th_guest_fee})
+        quote['breakdown'].append({'label': '第八位貴賓加收', 'amount': o._8th_guest_fee})
+        quote['total'] += o._8th_guest_fee
     return quote
 
 
@@ -3210,6 +3252,7 @@ def send_order_confirm(reply_token, session):
     if session.get('child_seat_count', 0):
         extras.append(f'兒童安全座椅 x{session["child_seat_count"]}')
     if session.get('pet'): extras.append('寵物同行')
+    if session.get('8th_guest'): extras.append('第八位貴賓（+NT$400）')
     extra_stops = session.get('extra_stops', [])
 
     quote = build_quote_from_session(session)
@@ -3348,6 +3391,9 @@ def save_order(reply_token, session, user_id):
         inv_note = ""
 
     base_note = session.get('note', '') or ''
+    if session.get('8th_guest'):
+        guest8_note = '【第八位貴賓】加收 NT$400'
+        base_note = (base_note + '\n' + guest8_note).strip() if base_note else guest8_note
     full_note = (base_note + '\n' + inv_note).strip() if inv_note else base_note
 
     with app.app_context():
