@@ -741,13 +741,18 @@ def admin_send_message(order_id):
     release = request.form.get('release_human_mode') == '1'
     try:
         full_msg = f'【樂高客服】\n\n{msg}\n\n如有疑問請回覆此訊息，感謝您。'
-        with ApiClient(configuration) as api_client:
-            MessagingApi(api_client).push_message(
-                PushMessageRequest(
-                    to=order.line_user_id,
-                    messages=[TextMessage(text=full_msg)]
+        try:
+            with ApiClient(configuration) as api_client:
+                MessagingApi(api_client).push_message(
+                    PushMessageRequest(
+                        to=order.line_user_id,
+                        messages=[TextMessage(text=full_msg)]
+                    )
                 )
-            )
+        except Exception as e:
+            app.logger.error(f'admin_send_message push error detail: {repr(e)}')
+            flash(f'發送失敗：{repr(e)[:200]}')
+            return redirect(url_for('admin_order_detail', order_id=order_id))
         # 若勾選「解除真人客服模式」，恢復 AI 客服
         if release:
             uid = order.line_user_id
