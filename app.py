@@ -39,6 +39,15 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
 }
 
+import json as _json
+
+@app.template_filter('fromjson')
+def fromjson_filter(s):
+    try:
+        return _json.loads(s)
+    except Exception:
+        return []
+
 db.init_app(app)
 with app.app_context():
     db.create_all()
@@ -1054,6 +1063,7 @@ def push_dispatch_to_group(order, job):
             '地點：' + _mask_address(order.pickup_location),
             '日期：' + order.booking_date + ' ' + order.booking_time,
             '乘客/行李：' + str(order.passengers) + '人 / ' + str(order.luggage) + '件',
+            *([f'停靠點{i+1}：' + s for i, s in enumerate(__import__("json").loads(order.extra_stops or '[]'))]),
             '航班：' + (order.flight_number or '無'),
             '─────────────',
             fee_line,
@@ -1137,6 +1147,8 @@ def push_dispatch_to_driver(driver, order, job):
                 make_info_row("車型需求", order.vehicle),
                 make_info_row("機場", order.airport),
                 make_info_row("接送地點", _mask_address(order.pickup_location)),
+                *([make_info_row(f"停靠點 {i+1}", _mask_address(s))
+                    for i, s in enumerate(__import__("json").loads(order.extra_stops or '[]'))]),
                 make_info_row("日期時間", f"{order.booking_date} {order.booking_time}"),
                 make_info_row("乘客/行李", f"{order.passengers}人 / {order.luggage}件"),
                 {"type": "separator", "margin": "sm"},

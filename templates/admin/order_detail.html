@@ -97,6 +97,18 @@
   .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
 
   .divider { border: none; border-top: 1px solid #EDF2F7; margin: 16px 0; }
+
+  .stop-badge {
+    display: inline-block;
+    background: #EBF8F1;
+    color: #2D6A4F;
+    border: 1px solid #9AE6B4;
+    border-radius: 4px;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-right: 6px;
+  }
 </style>
 </head>
 <body>
@@ -163,7 +175,31 @@
             <div><div class="info-label">服務類型</div><div class="info-value">{{ order.service_name }}</div></div>
             <div><div class="info-label">車型</div><div class="info-value">{{ order.vehicle }}</div></div>
             <div><div class="info-label">機場</div><div class="info-value">{{ order.airport }}</div></div>
-            <div><div class="info-label">接送地點</div><div class="info-value">{{ order.pickup_location }}</div></div>
+            <div>
+              <div class="info-label">接送地點</div>
+              <div class="info-value">{{ order.pickup_location }}</div>
+            </div>
+            {% if order.extra_stops and order.extra_stops != '[]' %}
+            {% set stops = order.extra_stops | fromjson %}
+            {% if stops %}
+            <div style="grid-column: 1 / -1;">
+              <div class="info-label" style="margin-bottom:8px">多點停靠</div>
+              <div style="display:flex;flex-direction:column;gap:6px;">
+                {% for stop in stops %}
+                <div style="display:flex;align-items:flex-start;gap:8px;padding:8px 12px;background:#F0FFF4;border:1px solid #9AE6B4;border-radius:6px;">
+                  <span class="stop-badge">停靠 {{ loop.index }}</span>
+                  <span style="font-size:14px;color:#2D3748;font-weight:500;">{{ stop }}</span>
+                </div>
+                {% endfor %}
+              </div>
+              {% if order.extra_stop_fee %}
+              <div style="margin-top:8px;font-size:12px;color:#E05C00;font-weight:600;">
+                多點加收：NT${{ "{:,}".format(order.extra_stop_fee) }}
+              </div>
+              {% endif %}
+            </div>
+            {% endif %}
+            {% endif %}
             <div><div class="info-label">接送日期</div><div class="info-value">{{ order.booking_date }}</div></div>
             <div><div class="info-label">接送時間</div><div class="info-value">{{ order.booking_time }}</div></div>
             <div><div class="info-label">乘客人數</div><div class="info-value">{{ order.passengers }} 人</div></div>
@@ -177,20 +213,21 @@
         <div class="card-body">
           <div style="margin-bottom: 16px;">
             <span class="tag {{ 'tag-warn' if order.night_fee else 'tag-inactive' }}">夜間加成{{ ' +NT$200' if order.night_fee else '（無）' }}</span>
-            <span class="tag {{ 'tag-active' if order.sign_board else 'tag-inactive' }}">舉牌服務{{ ' +NT$200' if order.sign_board else '（無）' }}</span>
+            <span class="tag {{ 'tag-active' if order.sign_board else 'tag-inactive' }}">舉牌服務{{ ' +NT$300' if order.sign_board else '（無）' }}</span>
             <span class="tag {{ 'tag-active' if order.pet else 'tag-inactive' }}">寵物同行{{ ' +NT$300' if order.pet else '（無）' }}</span>
           </div>
           {% if order.child_seat and order.child_seat_count %}
           <div style="margin-bottom: 12px;">
             <div class="info-label">兒童安全座椅</div>
-            <div class="info-value">{{ order.child_seat }} × {{ order.child_seat_count }} 張（+NT${{ order.child_seat_count * 100 }}）</div>
+            <div class="info-value">{{ order.child_seat }} × {{ order.child_seat_count }} 張（+NT${{ order.child_seat_count * 200 }}）</div>
           </div>
           {% endif %}
           <hr class="divider">
           {% if order.night_fee %}<div class="fee-row"><span>夜間服務費</span><span>NT$200</span></div>{% endif %}
-          {% if order.sign_board %}<div class="fee-row"><span>舉牌服務</span><span>NT$200</span></div>{% endif %}
-          {% if order.child_seat_count %}<div class="fee-row"><span>兒童安全座椅 × {{ order.child_seat_count }}</span><span>NT${{ order.child_seat_count * 100 }}</span></div>{% endif %}
+          {% if order.sign_board %}<div class="fee-row"><span>舉牌服務</span><span>NT$300</span></div>{% endif %}
+          {% if order.child_seat_count %}<div class="fee-row"><span>兒童安全座椅 × {{ order.child_seat_count }}</span><span>NT${{ order.child_seat_count * 200 }}</span></div>{% endif %}
           {% if order.pet %}<div class="fee-row"><span>寵物同行</span><span>NT$300</span></div>{% endif %}
+          {% if order.extra_stop_fee %}<div class="fee-row"><span>多點停靠加收</span><span>NT${{ "{:,}".format(order.extra_stop_fee) }}</span></div>{% endif %}
           {% if order.extra_fees() > 0 %}
           <div class="fee-row"><span>加購費用合計</span><span>NT${{ order.extra_fees() }}</span></div>
           {% else %}
@@ -278,13 +315,12 @@
       <div class="card">
         <div class="card-header"><div class="card-title">傳訊息給客人</div></div>
         {% if order.line_user_id and order.line_user_id != 'manual' %}
-        <div style="margin-bottom:12px">
+        <div style="padding:0 24px;margin-bottom:12px">
           <div style="font-size:12px;color:#718096;margin-bottom:6px">
             客人 LINE ID：<code style="background:#EDF2F7;padding:2px 6px;border-radius:4px;font-size:11px">{{ order.line_user_id }}</code>
           </div>
         </div>
-        <!-- 快速訊息模板 -->
-        <div style="margin-bottom:12px">
+        <div style="padding:0 24px;margin-bottom:12px">
           <div style="font-size:11px;font-weight:600;color:#A0AEC0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">快速訊息</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
             <button type="button" class="btn btn-outline" style="font-size:12px;padding:7px 6px;text-align:center"
@@ -305,20 +341,22 @@
             </button>
           </div>
         </div>
-        <form method="POST" action="/admin/order/{{ order.id }}/message">
-          <textarea id="msgInput" name="message" rows="4"
-            style="width:100%;padding:10px;border:1px solid #E2E8F0;border-radius:8px;font-size:14px;resize:vertical;margin-bottom:10px"
-            placeholder="輸入要傳給客人的訊息...&#10;（系統會自動加上「【樂高客服】」前綴）"></textarea>
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-            <input type="checkbox" name="release_human_mode" value="1" id="releaseHuman" style="accent-color:#4A9B8F">
-            <label for="releaseHuman" style="font-size:13px;color:#718096;cursor:pointer">
-              發送後恢復 AI 客服（解除真人客服模式）
-            </label>
-          </div>
-          <button type="submit" class="btn btn-primary" style="width:100%">
-            發送 LINE 訊息給客人
-          </button>
-        </form>
+        <div style="padding:0 24px 24px">
+          <form method="POST" action="/admin/order/{{ order.id }}/message">
+            <textarea id="msgInput" name="message" rows="4"
+              style="width:100%;padding:10px;border:1px solid #E2E8F0;border-radius:8px;font-size:14px;resize:vertical;margin-bottom:10px"
+              placeholder="輸入要傳給客人的訊息...&#10;（系統會自動加上「【樂高客服】」前綴）"></textarea>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+              <input type="checkbox" name="release_human_mode" value="1" id="releaseHuman" style="accent-color:#4A9B8F">
+              <label for="releaseHuman" style="font-size:13px;color:#718096;cursor:pointer">
+                發送後恢復 AI 客服（解除真人客服模式）
+              </label>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:100%">
+              發送 LINE 訊息給客人
+            </button>
+          </form>
+        </div>
         {% else %}
         <div style="text-align:center;padding:20px;color:#A0AEC0;font-size:14px">
           此訂單為人工建立，無 LINE User ID<br>
@@ -409,7 +447,7 @@
                 <option value="1">是</option>
                 <option value="0">否</option>
               </select>
-              <button type="submit" class="btn btn-primary btn-full"> 發布搶單</button>
+              <button type="submit" class="btn btn-primary btn-full">發布搶單</button>
             </form>
             <div style="margin-top:10px;font-size:11px;color:#A0AEC0;line-height:1.6">
               發布後所有啟用司機將收到 LINE 推播，第一個按「接單」的司機獲得此訂單。
