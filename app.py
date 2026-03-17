@@ -2029,6 +2029,11 @@ def _handle_message_inner(event):
         send_service_menu(event.reply_token)
         return
 
+    if text in ['報價', '我要報價', '查詢報價', '快速報價']:
+        user_sessions[user_id] = {'step': 'quote_service'}
+        send_quote_service_menu(event.reply_token)
+        return
+    
     if text == '查詢訂單':
         user_sessions[user_id] = {'step': 'query_name'}
         reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
@@ -3370,6 +3375,7 @@ LINE ID：@taiwantop
 - 不確定的資訊不要亂猜，誠實說不確定並建議聯繫客服
 - 不要自行計算或判斷七天內加收費用，一律請客人輸入「預約」進入系統，由系統自動計算所有費用
 - 若客人提供預約資料詢問費用，不要幫客人整理確認單或計算加收費用，直接請他輸入「預約」讓系統處理
+- 若客人詢問任何地區或路線的費用、車資、多少錢等問題，不要直接報價，請引導他輸入「報價」使用快速報價系統取得準確報價
 """
 
 def ask_openai(user_id, user_message, order_context=None):
