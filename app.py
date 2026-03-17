@@ -2313,6 +2313,56 @@ def _handle_message_inner(event):
             user_sessions[user_id] = session
             reply_text(event.reply_token, f'請輸入接送日期（格式：{datetime.now().strftime("%Y-%m-%d")}）：')
 
+    elif step == 'quote_pickup':
+        addr = text.strip()
+        # 簡單驗證：至少要有縣市關鍵字
+        import re as _re
+        if len(addr) < 4:
+            reply_text(event.reply_token, '請輸入更完整的地址（至少含縣市及鄉鎮區市）：\n例：台中市西區、彰化縣員林市')
+        else:
+            session['quote_pickup'] = addr
+            session['step'] = 'quote_ask_stop'
+            session['quote_stops'] = []
+            session['quote_stop_fee'] = 0
+            user_sessions[user_id] = session
+            send_quote_stop_menu(event.reply_token)
+
+    elif step == 'quote_stop_input':
+        stop_addr = text.strip()
+        stops = session.get('quote_stops', [])
+        origin = stops[-1] if stops else session.get('quote_pickup', '')
+        distance_km = get_distance_km(origin, stop_addr)
+        fee, km = calc_extra_stop_fee(distance_km)
+        stops.append(stop_addr)
+        session['quote_stops'] = stops
+        if fee:
+            session['quote_stop_fee'] = session.get('quote_stop_fee', 0) + fee
+            dist_text = f'（距離約 {km} 公里，加收 NT${fee}）'
+        else:
+            dist_text = '（距離計算失敗，費用待確認）'
+        session['step'] = 'quote_stop_more_ask'
+        user_sessions[user_id] = session
+        reply_text(event.reply_token,
+            f'已新增停靠點：{stop_addr}\n{dist_text}\n\n'
+            f'目前多點加收合計：NT${session["quote_stop_fee"]}'
+        )
+        send_quote_stop_more_menu(event.reply_token)
+
+    elif step == 'quote_date':
+        try:
+            from datetime import date as _date
+            dt = datetime.strptime(text, '%Y-%m-%d')
+            days_ahead = (dt.date() - _date.today()).days
+            if days_ahead < 0:
+                reply_text(event.reply_token, f'日期已過期，請重新輸入，例如：{datetime.now().strftime("%Y-%m-%d")}')
+            else:
+                session['quote_date'] = text
+                user_sessions[user_id] = session
+                _show_quote_result(event.reply_token, session, user_id)
+                user_sessions.pop(user_id, None)
+        except ValueError:
+            reply_text(event.reply_token, f'日期格式錯誤，請重新輸入，例如：{datetime.now().strftime("%Y-%m-%d")}')
+            
     else:
         if OPENAI_API_KEY:
             user_sessions[user_id] = {'step': 'ai_chat'}
@@ -2455,6 +2505,55 @@ def _handle_postback_inner(event):
             '如有急事，可以撥打 04-26318898、0968685835'
         )
 
+    elif data == 'start_quote':
+        user_sessions[user_id] = {'step': 'quote_service'}
+        send_quote_service_menu(event.reply_token)
+
+    elif data == 'quote_service_departure':
+        session['quote_service'] = '送機'
+        session['step'] = 'quote_airport'
+        user_sessions[user_id] = session
+        send_quote_airport_menu(event.reply_token)
+
+    elif data == 'quote_service_arrival':
+        session['quote_service'] = '接機'
+        session['step'] = 'quote_airport'
+        user_sessions[user_id] = session
+        send_quote_airport_menu(event.reply_token)
+
+    elif data.startswith('quote_airport_'):
+        a_id = data.replace('quote_airport_', '')
+        apt = AirportOption.query.get(int(a_id))
+        session['quote_airport'] = apt.name if apt else ''
+        session['step'] = 'quote_pickup'
+        user_sessions[user_id] = session
+        svc = session.get('quote_service', '')
+        if svc == '送機':
+            reply_text(event.reply_token, '請輸入出發地址（至少含縣市及鄉鎮區市）：\n例：台中市西區、彰化縣員林市')
+        else:
+            reply_text(event.reply_token, '請輸入目的地址（至少含縣市及鄉鎮區市）：\n例：台中市西區、彰化縣員林市')
+
+    elif data == 'quote_stop_yes':
+        session['step'] = 'quote_stop_input'
+        session.setdefault('quote_stops', [])
+        user_sessions[user_id] = session
+        reply_text(event.reply_token, f'請輸入第 {len(session["quote_stops"]) + 1} 個停靠點地址：')
+
+    elif data == 'quote_stop_no':
+        session['step'] = 'quote_date'
+        user_sessions[user_id] = session
+        reply_text(event.reply_token, f'請輸入預計日期（格式：{datetime.now().strftime("%Y-%m-%d")}）：')
+
+    elif data == 'quote_stop_more':
+        session['step'] = 'quote_stop_input'
+        user_sessions[user_id] = session
+        reply_text(event.reply_token, f'請輸入第 {len(session.get("quote_stops", [])) + 1} 個停靠點地址：')
+
+    elif data == 'quote_stop_done':
+        session['step'] = 'quote_date'
+        user_sessions[user_id] = session
+        reply_text(event.reply_token, f'請輸入預計日期（格式：{datetime.now().strftime("%Y-%m-%d")}）：')
+        
     elif data == 'start_booking':
         user_sessions[user_id] = {'step': 'choose_service'}
         send_service_menu(event.reply_token)
@@ -2809,6 +2908,136 @@ def send_8th_guest_menu(reply_token):
         ]}
     }
     send_flex(reply_token, '第八位貴賓', bubble)
+
+def send_quote_service_menu(reply_token):
+    bubble = {
+        "type": "bubble",
+        "header": header_box("快速報價", "#2B6CB0"),
+        "body": {"type": "box", "layout": "vertical", "contents": [
+            {"type": "text", "text": "請選擇服務類型", "size": "md", "color": "#333333", "weight": "bold", "wrap": True},
+            make_button("送機（出境）", "quote_service_departure", "primary"),
+            make_button("接機（回國）", "quote_service_arrival"),
+        ]}
+    }
+    send_flex(reply_token, '快速報價', bubble)
+
+
+def send_quote_airport_menu(reply_token):
+    airports = get_airports()
+    buttons = [make_button(a.name, f"quote_airport_{a.id}") for a in airports]
+    bubble = {
+        "type": "bubble",
+        "header": header_box("快速報價", "#2B6CB0"),
+        "body": {"type": "box", "layout": "vertical", "contents": [
+            {"type": "text", "text": "請選擇機場", "size": "md", "color": "#333333", "weight": "bold", "wrap": True},
+        ] + buttons}
+    }
+    send_flex(reply_token, '選擇機場', bubble)
+
+
+def send_quote_stop_menu(reply_token):
+    bubble = {
+        "type": "bubble",
+        "header": header_box("快速報價", "#2B6CB0"),
+        "body": {"type": "box", "layout": "vertical", "contents": [
+            {"type": "text", "text": "是否有中途停靠點？", "size": "md", "color": "#333333", "weight": "bold", "wrap": True},
+            {"type": "text", "text": "停靠費用依距離計算：5公里內 +NT$200、12公里內 +NT$300、18公里內 +NT$400、超過 +NT$500", "size": "xs", "color": "#888888", "margin": "sm", "wrap": True},
+            make_button("有停靠點", "quote_stop_yes"),
+            make_button("沒有，直接報價", "quote_stop_no", "primary"),
+        ]}
+    }
+    send_flex(reply_token, '是否有停靠點', bubble)
+
+
+def send_quote_stop_more_menu(reply_token):
+    bubble = {
+        "type": "bubble",
+        "header": header_box("快速報價", "#2B6CB0"),
+        "body": {"type": "box", "layout": "vertical", "contents": [
+            {"type": "text", "text": "還有其他停靠點嗎？", "size": "md", "color": "#333333", "weight": "bold", "wrap": True},
+            make_button("繼續新增停靠點", "quote_stop_more"),
+            make_button("完成，直接報價", "quote_stop_done", "primary"),
+        ]}
+    }
+    send_flex(reply_token, '繼續新增停靠點', bubble)
+
+
+def _show_quote_result(reply_token, session, user_id):
+    """計算並顯示報價結果"""
+    class FakeOrder:
+        pass
+    o = FakeOrder()
+    o.airport         = session.get('quote_airport', '')
+    o.pickup_location = session.get('quote_pickup', '')
+    o.night_fee       = False
+    o.sign_board      = False
+    o.child_seat_count = 0
+    o.pet             = False
+    o.booking_date    = session.get('quote_date', '')
+    o.extra_stop_fee  = 0
+
+    quote = calculate_quote(o)
+
+    # 多點加收
+    stops = session.get('quote_stops', [])
+    stop_fee = session.get('quote_stop_fee', 0)
+    if stops and stop_fee:
+        quote['breakdown'].append({'label': f'多點停靠加收（{len(stops)} 點）', 'amount': stop_fee})
+        quote['total'] += stop_fee
+
+    # 組合報價卡片
+    svc = session.get('quote_service', '')
+    airport = session.get('quote_airport', '')
+    pickup = session.get('quote_pickup', '')
+    date = session.get('quote_date', '')
+
+    rows = []
+    rows.append(make_info_row("服務", svc))
+    rows.append(make_info_row("機場", airport))
+    rows.append(make_info_row("地址", pickup))
+    if stops:
+        for i, s in enumerate(stops, 1):
+            rows.append(make_info_row(f"停靠點 {i}", s))
+    rows.append(make_info_row("日期", date))
+    rows.append({"type": "separator", "margin": "md"})
+
+    if quote['base_price'] == 0:
+        rows.append({
+            "type": "text",
+            "text": "此區域尚未設定報價，請聯繫客服為您報價，謝謝！",
+            "size": "sm", "color": "#E05C00", "wrap": True, "margin": "md"
+        })
+    else:
+        for item in quote['breakdown']:
+            rows.append(make_info_row(item['label'], f"NT${item['amount']:,}"))
+        rows.append({"type": "separator", "margin": "sm"})
+        rows.append({
+            "type": "box", "layout": "horizontal", "margin": "sm",
+            "contents": [
+                {"type": "text", "text": "預估總費用", "weight": "bold", "flex": 3, "size": "sm", "wrap": True},
+                {"type": "text", "text": f"NT${quote['total']:,}", "weight": "bold",
+                 "flex": 5, "color": "#E05C00", "size": "lg", "align": "end", "wrap": True}
+            ]
+        })
+        rows.append({
+            "type": "text",
+            "text": "以上為預估報價（不含夜間費、舉牌、兒童座椅、寵物等加購），實際費用以預約時系統計算為準。",
+            "size": "xs", "color": "#A0AEC0", "margin": "md", "wrap": True
+        })
+
+    bubble = {
+        "type": "bubble",
+        "header": {
+            "type": "box", "layout": "vertical", "backgroundColor": "#2B6CB0",
+            "contents": [
+                {"type": "text", "text": "快速報價結果", "color": "#FFFFFF", "size": "xl", "weight": "bold"},
+                {"type": "text", "text": f"{svc}　{date}", "color": "#BEE3F8", "size": "sm", "wrap": True}
+            ]
+        },
+        "body": {"type": "box", "layout": "vertical", "contents": rows}
+    }
+
+    send_flex(reply_token, '快速報價結果', bubble)
 
 # ── 新功能 1：電子發票選單 ─────────────────────────────────────────────
 def send_invoice_menu(reply_token):
@@ -3189,8 +3418,10 @@ def send_main_menu(reply_token):
                  "style": "secondary"},
                 {"type": "button", "action": {"type": "postback", "label": "查詢我的訂單", "data": "query_order_start"},
                  "style": "secondary"},
+                {"type": "button", "action": {"type": "postback", "label": "我要報價", "data": "start_quote"},
+                "style": "secondary", "color": "#2B6CB0"},
                 {"type": "button", "action": {"type": "postback", "label": "👤 真人客服", "data": "request_human"},
-                 "style": "secondary", "color": "#E05C00"},
+                "style": "secondary", "color": "#E05C00"},
             ]
         }
     }
