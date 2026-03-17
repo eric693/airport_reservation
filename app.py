@@ -1058,7 +1058,7 @@ def push_dispatch_to_group(order, job):
             '─────────────',
             fee_line,
             '─────────────',
-            '請至 LINE Bot 私訊回覆：搶單' + str(order.id),
+            '請私訊回覆：' + str(order.id),
         ])
         with ApiClient(configuration) as api_client:
             MessagingApi(api_client).push_message(
