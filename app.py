@@ -1626,7 +1626,8 @@ def calculate_quote(order):
         pass
 
     try:
-        booking_md = order.booking_date[5:]
+        booking_md = order.booking_date[5:] if order.booking_date and len(order.booking_date) >= 7 else ''
+        app.logger.info(f'假日比對 booking_md={booking_md!r}')
         holidays = HolidaySurcharge.query.filter_by(active=True).all()
         for h in holidays:
             if h.date_from <= booking_md <= h.date_to:
@@ -2110,6 +2111,16 @@ def _handle_message_inner(event):
         user_sessions.pop(user_id, None)
         send_main_menu(event.reply_token)
         return
+    
+    if text in ['真人客服', '真人', '人工客服', '客服']:
+        notify_human_agent(user_id)
+        user_sessions[user_id] = {'step': 'human_mode'}
+        reply_text(event.reply_token,
+            '已通知真人客服！\n\n'
+            '客服人員收到通知後將主動與您聯繫，請稍候。\n\n'
+            '如有急事，可以撥打 04-26318898、0968685835'
+        )
+        return
 
     if text in ['預約', '訂車', '機場接送', '開始預約']:
         user_sessions[user_id] = {'step': 'choose_service'}
@@ -2431,11 +2442,39 @@ def _handle_message_inner(event):
             dist_text = '（距離計算失敗，費用待確認）'
         session['step'] = 'quote_stop_more_ask'
         user_sessions[user_id] = session
-        reply_text(event.reply_token,
-            f'已新增停靠點：{stop_addr}\n{dist_text}\n\n'
-            f'目前多點加收合計：NT${session["quote_stop_fee"]}'
-        )
-        send_quote_stop_more_menu(event.reply_token)
+
+        notice_msg = f'已新增停靠點：{stop_addr}\n{dist_text}\n\n目前多點加收合計：NT${session["quote_stop_fee"]}'
+
+        # 全部改用 push，不用 reply_token
+        def _push_stop_and_menu(uid, msg):
+            try:
+                with ApiClient(configuration) as api_client:
+                    api = MessagingApi(api_client)
+                    # 先發文字
+                    api.push_message(PushMessageRequest(
+                        to=uid, messages=[TextMessage(text=msg)]
+                    ))
+                    # 再發選單
+                    bubble = {
+                        "type": "bubble",
+                        "header": header_box("快速報價", "#2B6CB0"),
+                        "body": {"type": "box", "layout": "vertical", "contents": [
+                            {"type": "text", "text": "還有其他停靠點嗎？", "size": "md", "color": "#333333", "weight": "bold", "wrap": True},
+                            make_button("繼續新增停靠點", "quote_stop_more"),
+                            make_button("完成，直接報價", "quote_stop_done", "primary"),
+                        ]}
+                    }
+                    api.push_message(PushMessageRequest(
+                        to=uid,
+                        messages=[FlexMessage(alt_text='繼續新增停靠點', contents=FlexContainer.from_dict(bubble))]
+                    ))
+            except Exception as e:
+                app.logger.error(f'push stop and menu error: {e}')
+
+        import threading
+        threading.Thread(target=_push_stop_and_menu, args=(user_id, notice_msg), daemon=True).start()
+        # reply_token 回一個空白確認，讓 LINE 不報錯
+        reply_text(event.reply_token, '正在計算距離，請稍候...')
 
     elif step == 'quote_date':
         try:
@@ -2584,13 +2623,12 @@ def _handle_postback_inner(event):
         reply_text(event.reply_token, '已取消預約。\n\n輸入「預約」重新開始。')
 
     elif data == 'request_human':
-        # 推播通知真人客服
         notify_human_agent(user_id)
-        # 標記為真人客服模式，AI 暫停回應
-        user_sessions[user_id] = {'step': 'human_mode'}
+        # 不進入 human_mode，AI 繼續回應
         reply_text(event.reply_token,
             '已通知真人客服！\n\n'
             '客服人員收到通知後將主動與您聯繫，請稍候。\n\n'
+            '如是一般問題可以直接打字詢問，AI可以回答您80%問題\n\n'
             '如有急事，可以撥打 04-26318898、0968685835'
         )
 
@@ -2668,7 +2706,7 @@ def _handle_postback_inner(event):
         user_sessions[user_id] = session
         reply_text(event.reply_token,
             '請輸入手機條碼載具（格式：/XXXXXXX，共8碼）：\n\n'
-            '例：/ABC1234\n\n若無載具請輸入「無」，發票將開立為個人雲端發票。'
+            '例：/ABC1234'
         )
 
     elif data == 'invoice_company':
@@ -3110,7 +3148,7 @@ def _show_quote_result(reply_token, session, user_id):
         })
         rows.append({
             "type": "text",
-            "text": "以上為預估報價（不含夜間費、舉牌、兒童座椅、寵物等加購），實際費用以預約時系統計算為準。",
+            "text": "以上為預估報價（不含舉牌、兒童座椅、寵物等加購），實際費用以預約時系統計算為準。",
             "size": "xs", "color": "#A0AEC0", "margin": "md", "wrap": True
         })
 
@@ -3354,9 +3392,8 @@ AI_SYSTEM_PROMPT = """你是「機場接送服務」的親切客服助理，名�
 若被問到「不指定車款有哪些」，請列出以上車款並說明一切以本公司調度為主。
 
 【人數與行李超載說明】
-- 不指定車款優惠活動僅限於 7 人 7 件標準 30 吋（含推車）。
-- 若超過 7 人或 7 件，恕無法受理，請聯繫客服確認。
-- 若客人詢問人數、行李、幾個人可以坐等問題，一律回答：「不指定車款優惠活動僅限於七人七件標準30吋（含推車），如需進一步預約或報價，請輸入「預約」或「報價」，謝謝您！」
+- 不指定車款優惠活動僅限於「最多」7 人 7 件標準 30 吋（含推車）。
+- 若客人詢問人數、行李、幾個人可以坐等問題，一律回答：「不指定車款優惠活動僅限於「最多」七人七件標準30吋（含推車），如需進一步預約或報價，請輸入「預約」或「報價」，謝謝您！」
 
 【公司資訊】
 - 公司名稱：樂高小客車租賃有限公司（Le Gao Car Rental Co., Ltd.）
@@ -3395,7 +3432,7 @@ Q4b 車型可以選擇嗎？
 A：可以指定車型，您提供給我人數跟行李件數，好讓我報指定車款可以乘載的車款報價給您。
 
 Q5 行李有數量限制嗎？人數上限是幾人？
-A：不指定車款優惠活動僅限於七人七件標準 30 吋（含推車）。如需進一步預約或報價，請輸入「預約」或「報價」，讓我幫您進入下一個流程，謝謝您！
+A：不指定車款優惠活動僅限於「最多」七人七件標準 30 吋（含推車）。如需進一步預約或報價，請輸入「預約」或「報價」，讓我幫您進入下一個流程，謝謝您！
 
 Q6 小孩需要安全座椅嗎？可以提供嗎？
 A：安全座椅／增高墊加收 NT$200／座，請提供幾歲用的。
@@ -3456,13 +3493,14 @@ LINE ID：@taiwantop
 【回覆原則】
 - 全程使用繁體中文
 - 回覆要簡潔口語，不要太正式或太長
-- 任何涉及人數、行李件數的問題，一律回答「不指定車款優惠活動僅限於七人七件標準30吋（含推車）」，不提第八位貴賓、不提加收費用，並引導輸入「預約」或「報價」
+- 任何涉及人數、行李件數的問題，一律回答「不指定車款優惠活動僅限於「最多」七人七件標準30吋（含推車）」，並引導輸入「預約」或「報價」
 - 若客人問具體訂單狀態，請他輸入「查詢訂單」由系統查詢
 - 若客人要預約，請他輸入「預約」進入預約流程
 - 不確定的資訊不要亂猜，誠實說不確定並建議聯繫客服
 - 不要自行計算或判斷七天內加收費用，一律請客人輸入「預約」進入系統，由系統自動計算所有費用
 - 若客人提供預約資料詢問費用，不要幫客人整理確認單或計算加收費用，直接請他輸入「預約」讓系統處理
 - 若客人詢問任何地區或路線的費用、車資、多少錢等問題，不要直接報價，請引導他輸入「報價」使用快速報價系統取得準確報價
+- 若客人提到異動、更改、取消、退款、找真人、真人服務等，一律回答：「請輸入『真人客服』，稍後會有真人客服人員來服務您，請稍候！」
 """
 
 def ask_openai(user_id, user_message, order_context=None):
