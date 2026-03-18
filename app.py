@@ -1627,10 +1627,16 @@ def calculate_quote(order):
 
     try:
         booking_md = order.booking_date[5:] if order.booking_date and len(order.booking_date) >= 7 else ''
-        app.logger.info(f'假日比對 booking_md={booking_md!r}')
+        booking_full = order.booking_date or ''
         holidays = HolidaySurcharge.query.filter_by(active=True).all()
         for h in holidays:
-            if h.date_from <= booking_md <= h.date_to:
+            df = h.date_from or ''
+            dt = h.date_to or ''
+            if len(df) == 5:  # MM-DD 格式（每年重複）
+                match = booking_md and df <= booking_md <= dt
+            else:  # YYYY-MM-DD 格式（指定年份）
+                match = booking_full and df <= booking_full <= dt
+            if match:
                 result['holiday'] = h.name
                 result['holiday_amount'] = h.amount
                 result['surcharges'].append({'label': f'假日加收（{h.name}）', 'amount': h.amount})
