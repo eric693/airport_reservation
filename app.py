@@ -2114,10 +2114,10 @@ def _handle_message_inner(event):
     
     if text in ['真人客服', '真人', '人工客服', '客服']:
         notify_human_agent(user_id)
-        user_sessions[user_id] = {'step': 'human_mode'}
         reply_text(event.reply_token,
             '已通知真人客服！\n\n'
             '客服人員收到通知後將主動與您聯繫，請稍候。\n\n'
+            '如是一般問題可以直接打字詢問，AI 可以回答您 80% 的問題。\n\n'
             '如有急事，可以撥打 04-26318898、0968685835'
         )
         return
