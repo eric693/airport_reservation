@@ -1712,6 +1712,8 @@ def pay_deposit(order_id):
 
 @app.route('/newebpay/notify', methods=['POST'])
 def newebpay_notify():
+    import re
+
     app.logger.info(f'Newebpay notify received: form={dict(request.form)}')
     status         = request.form.get('Status')
     trade_info_enc = request.form.get('TradeInfo', '')
@@ -1782,16 +1784,14 @@ def newebpay_notify():
 
     # ── 自動開立 ezPay 電子發票 ──────────────────────────────────
     try:
-        # 從 order.note 解析發票資訊
         note = order.note or ''
-        inv_type = ''
-        carrier  = ''
-        tax_id   = ''
+        inv_type     = ''
+        carrier      = ''
+        tax_id       = ''
         company_name = ''
+
         if '【發票】公司抬頭：' in note:
             inv_type = 'company'
-            # 格式: 【發票】公司抬頭：XXX（統編 XXXXXXXX）
-            import re
             m = re.search(r'【發票】公司抬頭：(.+?)（統編 (.+?)）', note)
             if m:
                 company_name = m.group(1)
@@ -1803,10 +1803,13 @@ def newebpay_notify():
                 carrier = m.group(1).strip()
         elif '【發票】個人雲端發票' in note:
             inv_type = 'personal'
+        elif '【發票】捐贈發票' in note:
+            inv_type = 'donate'
+
+        app.logger.info(f'ezPay invoice: inv_type={inv_type!r}, carrier={carrier!r}, order_id={order.id}')
 
         inv_no = issue_ezpay_invoice(order, inv_type, carrier, tax_id, company_name)
         if inv_no:
-            # 推播發票號碼給客人
             with ApiClient(configuration) as api_client:
                 MessagingApi(api_client).push_message(
                     PushMessageRequest(
@@ -1814,6 +1817,8 @@ def newebpay_notify():
                         messages=[TextMessage(text=f'🧾 電子發票已開立\n發票號碼：{inv_no}\n\n如需查詢發票，請至財政部電子發票整合服務平台查詢。')]
                     )
                 )
+        else:
+            app.logger.warning(f'ezPay invoice not issued for order {order.id}')
     except Exception as e:
         app.logger.error(f'ezPay invoice error: {e}')
 
