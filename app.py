@@ -2287,9 +2287,8 @@ def _handle_message_inner(event):
 
     elif step == 'input_flight':
         fn = text.strip().upper().replace(' ', '')
-        # 驗證格式：需包含字母開頭 + 數字（例：BR166、CI688）
         import re as _re
-        if not _re.match(r'^[A-Z]{1,3}[0-9]{1,5}$', fn):
+        if not _re.match(r'^[A-Z0-9]{2,8}$', fn):
             reply_text(event.reply_token,
                 f'「{text}」不是有效的航班號碼格式。\n\n'
                 '請重新輸入，例：BR166、CI688、JX200\n\n'
@@ -2297,43 +2296,9 @@ def _handle_message_inner(event):
             )
         else:
             session['flight'] = fn
+            session['step'] = 'ask_child_seat'
             user_sessions[user_id] = session
-            date_q = session.get('date', '')
-            import re as _re2, threading
-            fn_nz = _re2.sub(r'^([A-Z]{1,3})0+([0-9]+)$', r'\1\2', fn)
-            if not AVIATION_EDGE_KEY:
-                # 無 API Key → 直接繼續
-                session['step'] = 'ask_child_seat'
-                user_sessions[user_id] = session
-                send_child_seat_menu(event.reply_token)
-            else:
-                # 有 API Key → reply「查詢中」，背景查詢
-                reply_text(event.reply_token, f'正在查詢 {fn} 的航班資訊，請稍候...')
-                _sess_q = dict(session)
-                def _do_query(uid=user_id, f=fn, fnz=fn_nz, d=date_q, s=_sess_q):
-                    try:
-                        finfo = query_flight_info(fnz, d)
-                        if finfo:
-                            s['flight_info'] = finfo
-                            s['step'] = 'confirm_flight'
-                            user_sessions[uid] = s
-                            _push_flight_confirm(uid, f, finfo)
-                        else:
-                            s['step'] = 'ask_child_seat'
-                            user_sessions[uid] = s
-                            with ApiClient(configuration) as api_client:
-                                MessagingApi(api_client).push_message(
-                                    PushMessageRequest(to=uid,
-                                        messages=[TextMessage(text=f'查無 {f} 的航班資訊，已記錄號碼，繼續下一步。')])
-                                )
-                            _push_child_seat_menu(uid)
-                    except Exception as e:
-                        app.logger.error(f'flight query error: {e}')
-                        s['step'] = 'ask_child_seat'
-                        user_sessions[uid] = s
-                        _push_child_seat_menu(uid)
-                threading.Thread(target=_do_query, daemon=True).start()
-
+            send_child_seat_menu(event.reply_token)
 
     elif step == 'confirm_flight':
         if text in ['確認', '對', 'yes', 'YES', 'Yes', '是']:
