@@ -2877,16 +2877,17 @@ def _build_flight_bubble(flight_number, finfo):
     def hhmm(t):
         if not t: return '未提供'
         try:
-            # ISO 格式：2026-03-14T04:00:00.000 → 取 T 後面的 HH:MM
+            # ISO 格式：2026-03-14T04:00:00.000
             if 'T' in t:
                 return t.split('T')[1][:5]
-            # 空格格式：2026-03-14 04:00 → 取空格後面
-            if ' ' in t:
-                return t.split(' ')[1][:5]
+            # fmt_time 處理後格式：03/14（週六）04:00 → 取最後 HH:MM
+            import re as _re
+            m = _re.search(r'(\d{2}:\d{2})$', t.strip())
+            if m:
+                return m.group(1)
             # 純時間：04:00
             if len(t) <= 5:
                 return t
-            # 其他：取後段
             return t[11:16] if len(t) > 10 else t
         except Exception:
             return t
