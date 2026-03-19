@@ -149,12 +149,6 @@ NEWEBPAY_HASH_IV      = os.environ.get('NEWEBPAY_HASH_IV', '')
 NEWEBPAY_MODE         = os.environ.get('NEWEBPAY_MODE', 'test')       # test or prod
 NEWEBPAY_DEPOSIT      = 315
 
-# ── ezPay 電子發票設定 ──────────────────────────────────────────────
-EZPAY_MERCHANT_ID = os.environ.get('EZPAY_MERCHANT_ID', '338919792')
-EZPAY_HASH_KEY    = os.environ.get('EZPAY_HASH_KEY', '')
-EZPAY_HASH_IV     = os.environ.get('EZPAY_HASH_IV', '')
-EZPAY_MODE        = os.environ.get('EZPAY_MODE', 'test')  # 'test' or 'prod'
-
 # ── ezPay 電子發票設定 ────────────────────────────────────────────────
 EZPAY_MERCHANT_ID     = os.environ.get('EZPAY_MERCHANT_ID', '')
 EZPAY_HASH_KEY        = os.environ.get('EZPAY_HASH_KEY', '')   # ezPay 電子發票專用金鑰（非藍新）
