@@ -3873,10 +3873,19 @@ def save_order(reply_token, session, user_id):
 
 def send_order_query_result(reply_token, orders):
     import json as _json
+    status_map = {
+        '已確認': '預約成功',
+        '待確認': '待確認',
+        '待付款': '待付款',
+        '已完成': '已完成',
+        '已取消': '已取消',
+        '搶單中': '搶單中',
+    }
     bubbles = []
     for order in orders:
+        display_status = status_map.get(order.status, order.status)
         contents = [
-            make_info_row("狀態", order.status),
+            make_info_row("狀態", display_status),
             make_info_row("服務", order.service_name),
             make_info_row("車型", order.vehicle),
             make_info_row("機場", order.airport),
@@ -3884,7 +3893,6 @@ def send_order_query_result(reply_token, orders):
             make_info_row("時間", order.booking_time),
             make_info_row("地點", order.pickup_location),
         ]
-        # 顯示多點停靠
         try:
             stops = _json.loads(order.extra_stops or '[]')
             for i, stop in enumerate(stops, 1):
@@ -3893,7 +3901,6 @@ def send_order_query_result(reply_token, orders):
                 contents.append(make_info_row("多點加收", f"NT${order.extra_stop_fee:,}"))
         except Exception:
             pass
-        # 顯示總金額
         if order.total_price:
             contents.append({"type": "separator", "margin": "sm"})
             contents.append(make_info_row("總金額", f"NT${order.total_price:,}"))
