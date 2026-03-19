@@ -320,6 +320,7 @@ def issue_ezpay_invoice(order, invoice_type, carrier='', tax_id='', company_name
 
         result = resp.json()
         app.logger.info(f'ezPay invoice result: {result}')
+        print(f'ezPay invoice result: {result}', flush=True)
 
         if result.get('Status') == 'SUCCESS':
             inv_data = result.get('Result', {})
@@ -329,6 +330,7 @@ def issue_ezpay_invoice(order, invoice_type, carrier='', tax_id='', company_name
             return inv_no
         else:
             app.logger.warning(f'ezPay invoice failed: {result.get("Message")}')
+            print(f'ezPay invoice failed: {result.get("Message")}', flush=True)
             return None
 
     except Exception as e:
