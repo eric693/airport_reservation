@@ -3824,7 +3824,7 @@ def save_order(reply_token, session, user_id):
             {"type": "text", "text": "請於 30 分鐘內完成定金支付（NT$315 含稅），訂單才會正式成立。", "margin": "md", "wrap": True},
             {"type": "separator", "margin": "md"},
             {"type": "text", "text": "定金金額：NT$315（含稅）", "margin": "md", "weight": "bold", "size": "md", "color": "#E05C00", "wrap": True},
-            {"type": "button", "action": {"type": "uri", "label": "💳 線上刷卡／ATM 支付", "uri": pay_url},
+            {"type": "button", "action": {"type": "uri", "label": "💳 多元支付（刷卡／ATM／超商）", "uri": pay_url},
             "style": "primary", "color": "#4A9B8F", "margin": "md"},
             {"type": "button", "action": {"type": "postback", "label": "🏦 銀行轉帳", "data": f"bank_transfer:{order_id}"},
             "style": "secondary", "margin": "sm"},
