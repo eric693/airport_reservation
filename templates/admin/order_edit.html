@@ -134,7 +134,7 @@
         </div>
         <div class="form-group">
           <label>多點加收費用（NT$）</label>
-          <input type="number" name="extra_stop_fee" value="{{ order.extra_stop_fee if order else 0 }}" min="0" step="100">
+          <input type="number" name="extra_stop_fee" value="{{ order.extra_stop_fee if order else 0 }}" min="0" step="1">
         </div>
       </div>
     </div>
@@ -179,7 +179,7 @@
       <div class="form-grid">
         <div class="form-group">
           <label>向客人收取總金額（NT$）</label>
-          <input type="number" name="total_price" value="{{ order.total_price if order else 0 }}" min="0" step="100">
+          <input type="number" name="total_price" value="{{ order.total_price if order else 0 }}" min="0" step="1">
           <div class="hint">含定金，司機回金 = 此金額 − 司機所得</div>
         </div>
         {% if not order %}
