@@ -393,6 +393,10 @@ def check_and_notify():
                 print(f"Notify error for order {order.id}: {e}")
 
 def send_driver_info_to_customer(order, driver):
+    # 計算尾款
+    balance = max(0, (order.total_price or 0) - 300)
+    balance_text = f'NT${balance:,}' if order.total_price else '請依預約確認單金額'
+
     bubble = {
         "type": "bubble",
         "header": {
@@ -416,21 +420,15 @@ def send_driver_info_to_customer(order, driver):
                 make_info_row("車牌", driver.car_plate),
                 make_info_row("車身顏色", driver.car_color),
                 {"type": "separator", "margin": "md"},
+                {"type": "text", "text": "費用說明", "weight": "bold", "margin": "md", "color": "#1A2B4A", "wrap": True},
+                make_info_row("定金已付", "NT$300（未稅）"),
+                make_info_row("請交付現金給司機", balance_text),
+                {"type": "separator", "margin": "md"},
                 {"type": "text", "text": "為了確保乘車安全與服務品質，請務必確認車款、車號及司機資訊與客服通知相符，若有任何異常，請立即連繫客服，避免誤搭及後續爭議。",
                  "size": "xs", "color": "#888888", "margin": "md", "wrap": True}
             ]
         }
     }
-    try:
-        with ApiClient(configuration) as api_client:
-            MessagingApi(api_client).push_message(
-                PushMessageRequest(
-                    to=order.line_user_id,
-                    messages=[FlexMessage(alt_text='您的司機資料已送出', contents=FlexContainer.from_dict(bubble))]
-                )
-            )
-    except Exception as e:
-        print(f"Push message error: {e}")
 
 # ── Helpers ─────────────────────────────────────────────────────────
 def admin_required(f):
@@ -3861,6 +3859,8 @@ def send_order_query_result(reply_token, orders):
             make_info_row("日期", order.booking_date),
             make_info_row("時間", order.booking_time),
             make_info_row("地點", order.pickup_location),
+            make_info_row("乘客人數", f"{order.passengers} 人"),
+            make_info_row("行李件數", f"{order.luggage} 件"),
         ]
         try:
             stops = _json.loads(order.extra_stops or '[]')
