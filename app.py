@@ -429,6 +429,16 @@ def send_driver_info_to_customer(order, driver):
             ]
         }
     }
+    try:
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).push_message(
+                PushMessageRequest(
+                    to=order.line_user_id,
+                    messages=[FlexMessage(alt_text='您的司機資料已送出', contents=FlexContainer.from_dict(bubble))]
+                )
+            )
+    except Exception as e:
+        print(f"Push message error: {e}")
 
 # ── Helpers ─────────────────────────────────────────────────────────
 def admin_required(f):
@@ -2720,6 +2730,20 @@ def _handle_postback_inner(event):
         job_id = int(data.split(':')[1])
         handle_driver_grab(event.reply_token, user_id, job_id)
 
+    elif data.startswith('bank_transfer:'):
+        order_id = data.split(':')[1]
+        reply_text(event.reply_token,
+            f'【銀行轉帳說明】\n\n'
+            f'訂單編號：#{order_id}\n'
+            f'轉帳金額：NT$315\n\n'
+            f'━━━━━━━━━━━━━━━━\n'
+            f'銀行：玉山銀行（808）\n'
+            f'帳號：請填入你們帳號\n'
+            f'戶名：樂高小客車租賃有限公司\n'
+            f'━━━━━━━━━━━━━━━━\n\n'
+            f'✅ 匯款後請回覆匯款帳號後五碼，\n'
+            f'我們確認收款後將盡快為您確認訂單，謝謝您！'
+        )
     elif data.startswith('skip:'):
         job_id = int(data.split(':')[1])
         with app.app_context():
@@ -3799,8 +3823,10 @@ def save_order(reply_token, session, user_id):
             {"type": "text", "text": "請於 30 分鐘內完成定金支付（NT$315 含稅），訂單才會正式成立。", "margin": "md", "wrap": True},
             {"type": "separator", "margin": "md"},
             {"type": "text", "text": "定金金額：NT$315（含稅）", "margin": "md", "weight": "bold", "size": "md", "color": "#E05C00", "wrap": True},
-            {"type": "button", "action": {"type": "uri", "label": "立即支付定金 NT$315（含稅）", "uri": pay_url},
-             "style": "primary", "color": "#4A9B8F", "margin": "md"},
+            {"type": "button", "action": {"type": "uri", "label": "💳 線上刷卡／ATM 支付", "uri": pay_url},
+            "style": "primary", "color": "#4A9B8F", "margin": "md"},
+            {"type": "button", "action": {"type": "postback", "label": "🏦 銀行轉帳", "data": f"bank_transfer:{order_id}"},
+            "style": "secondary", "margin": "sm"},
         ]}
     }
     send_flex(reply_token, '請完成定金支付', bubble)
