@@ -38,7 +38,7 @@ class Order(db.Model):
     driver_notified = db.Column(db.Boolean, default=False)   # 是否已發送司機資料給客人
     notify_at = db.Column(db.String(10), default='')          # 幾小時前發送，例如 '2' 表示出發前2小時
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.utcnow() + timedelta(hours=8))
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     driver = db.relationship('Driver', backref='orders')
@@ -62,7 +62,7 @@ class VehicleType(db.Model):
     note = db.Column(db.String(100), default='')           # 備註說明
     sort_order = db.Column(db.Integer, default=0)          # 排序
     active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.utcnow() + timedelta(hours=8))
 
 
 class AirportOption(db.Model):
@@ -73,7 +73,7 @@ class AirportOption(db.Model):
     code = db.Column(db.String(20), nullable=False)        # 代碼，例如：tpe1
     sort_order = db.Column(db.Integer, default=0)          # 排序
     active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.utcnow() + timedelta(hours=8))
 
 
 class Driver(db.Model):
@@ -88,7 +88,7 @@ class Driver(db.Model):
     note = db.Column(db.Text, default='')
     line_user_id = db.Column(db.String(100), default='')   # 司機的 LINE User ID（用於推播搶單）
     active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.utcnow() + timedelta(hours=8))
 
 
 class DispatchJob(db.Model):
@@ -104,7 +104,7 @@ class DispatchJob(db.Model):
     note = db.Column(db.String(200), default='')              # 後台備註
     driver_fee = db.Column(db.Integer, nullable=True)             # 司機出車費用（NT$）
     notify_customer = db.Column(db.Boolean, default=True)     # 搶到後自動通知客人
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.utcnow() + timedelta(hours=8))
 
     order = db.relationship('Order', backref=db.backref('dispatch_job', uselist=False))
     winner = db.relationship('Driver', foreign_keys=[grabbed_by])
@@ -136,7 +136,7 @@ class PriceRule(db.Model):
     note = db.Column(db.Text, default='')                  # 備註說明
     active = db.Column(db.Boolean, default=True)
     sort_order = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.utcnow() + timedelta(hours=8))
 
 
 class PriceSurcharge(db.Model):
@@ -161,7 +161,7 @@ class HolidaySurcharge(db.Model):
     date_to = db.Column(db.String(10), nullable=False)
     amount = db.Column(db.Integer, default=300)
     active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.utcnow() + timedelta(hours=8))
 
 
 class SiteSetting(db.Model):
