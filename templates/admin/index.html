@@ -253,26 +253,27 @@
 
 <script>
 const searchInput = document.getElementById('searchInput');
-const statusFilter = document.getElementById('statusFilter');
 const serviceFilter = document.getElementById('serviceFilter');
 
 function filterTable() {
-  const search = searchInput.value.toLowerCase();
-  const status = statusFilter.value;
+  const search = searchInput.value.toLowerCase().trim();
   const service = serviceFilter.value;
   document.querySelectorAll('#ordersTable tbody tr').forEach(row => {
-    const text = row.innerText.toLowerCase();
-    const rowStatus = row.dataset.status;
+    const name    = (row.dataset.name  || '').toLowerCase();
+    const phone   = (row.dataset.phone || '').toLowerCase();
+    const id      = (row.dataset.id    || '').toLowerCase();
     const rowService = row.dataset.service;
-    const matchSearch = !search || text.includes(search);
-    const matchStatus = !status || rowStatus === status;
+    const matchSearch = !search ||
+      name.includes(search) ||
+      phone.includes(search) ||
+      id.includes(search) ||
+      ('#' + id).includes(search);
     const matchService = !service || rowService === service;
-    row.style.display = matchSearch && matchStatus && matchService ? '' : 'none';
+    row.style.display = matchSearch && matchService ? '' : 'none';
   });
 }
 
 searchInput.addEventListener('input', filterTable);
-statusFilter.addEventListener('change', filterTable);
 serviceFilter.addEventListener('change', filterTable);
 </script>
 </body>
