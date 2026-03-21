@@ -1793,8 +1793,10 @@ def newebpay_notify():
         app.logger.error(f'Post-payment push error: {e}')
 
     # ── 自動開立 ezPay 電子發票 ──────────────────────────────────
+    print(f'=== 開始開立發票，order_id={order.id} ===', flush=True)
     try:
         note = order.note or ''
+        print(f'=== note={note!r} ===', flush=True)
         inv_type     = ''
         carrier      = ''
         tax_id       = ''
