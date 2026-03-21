@@ -226,92 +226,93 @@ def build_newebpay_form(order_id: int, line_user_id: str, amt: int = NEWEBPAY_DE
 
 # ── ezPay 電子發票開立 ────────────────────────────────────────────────
 def ezpay_invoice_encrypt(data_str: str) -> str:
-    """AES-256-CBC 加密 ezPay 發票 RespondType"""
+    import binascii
     key = EZPAY_HASH_KEY.encode('utf-8')
     iv  = EZPAY_HASH_IV.encode('utf-8')
+    data = data_str.encode('utf-8')
+    pad_len = 32 - (len(data) % 32)
+    data = data + bytes([pad_len]) * pad_len
     cipher = AES.new(key, AES.MODE_CBC, iv)
-    encrypted = cipher.encrypt(pad(data_str.encode('utf-8'), AES.block_size))
-    return base64.b64encode(encrypted).decode('utf-8')
+    return binascii.hexlify(cipher.encrypt(data)).decode('ascii')
 
 def issue_ezpay_invoice(order, invoice_type, carrier='', tax_id='', company_name=''):
-    """呼叫 ezPay API 開立電子發票
-    invoice_type: 'personal' / 'company' / ''
-    """
+    import binascii, time as _time
     try:
         if EZPAY_MODE == 'prod':
             api_url = 'https://inv.ezpay.com.tw/Api/invoice_issue'
         else:
             api_url = 'https://cinv.ezpay.com.tw/Api/invoice_issue'
 
-        # 買受人資訊
+        amt      = NEWEBPAY_DEPOSIT
+        tax_amt  = round(amt - amt / 1.05)
+        amt_excl = amt - tax_amt
+
         if invoice_type == 'company':
-            buyer_name    = company_name or order.name
-            buyer_uni_no  = tax_id
-            carrier_type  = ''
-            carrier_num   = ''
-            print_flag    = '1'   # 紙本發票
-            love_code     = ''
+            buyer_name   = company_name or order.name
+            buyer_uni_no = tax_id
+            carrier_type = ''
+            carrier_num  = ''
+            print_flag   = 'Y'
+            love_code    = ''
+            category     = 'B2B'
         elif invoice_type == 'personal' and carrier:
-            buyer_name    = order.name
-            buyer_uni_no  = ''
-            carrier_type  = '0'   # 手機條碼
-            carrier_num   = carrier
-            print_flag    = '0'
-            love_code     = ''
+            buyer_name   = order.name
+            buyer_uni_no = ''
+            carrier_type = '0'
+            carrier_num  = carrier
+            print_flag   = 'N'
+            love_code    = ''
+            category     = 'B2C'
         elif invoice_type == 'donate':
-            # 捐贈發票
-            buyer_name    = order.name
-            buyer_uni_no  = ''
-            carrier_type  = ''
-            carrier_num   = ''
-            print_flag    = '0'
-            love_code     = DONATE_LOVE_CODE   # 愛心碼（待填入）
+            buyer_name   = order.name
+            buyer_uni_no = ''
+            carrier_type = ''
+            carrier_num  = ''
+            print_flag   = 'N'
+            love_code    = DONATE_LOVE_CODE
+            category     = 'B2C'
         else:
-            # 個人雲端（無載具）
-            buyer_name    = order.name
-            buyer_uni_no  = ''
-            carrier_type  = ''
-            carrier_num   = ''
-            print_flag    = '0'
-            love_code     = ''
+            buyer_name   = order.name
+            buyer_uni_no = ''
+            carrier_type = ''
+            carrier_num  = ''
+            print_flag   = 'Y'
+            love_code    = ''
+            category     = 'B2C'
 
-        # 稅額計算（含稅 315 元，稅率 5%）
-        amt        = NEWEBPAY_DEPOSIT          # 315 含稅
-        tax_amt    = round(amt - amt / 1.05)   # 約 15 元
-        amt_excl   = amt - tax_amt             # 未稅 300
+        ts = int(_time.time())
+        params = [
+            ('RespondType',     'JSON'),
+            ('Version',         '1.5'),
+            ('TimeStamp',       str(ts)),
+            ('TransNum',        ''),
+            ('MerchantOrderNo', f'INV{order.id}'),
+            ('BuyerName',       buyer_name),
+            ('BuyerEmail',      order.email or ''),
+            ('Category',        category),
+            ('TaxType',         '1'),
+            ('TaxRate',         '5'),
+            ('Amt',             str(amt_excl)),
+            ('TaxAmt',          str(tax_amt)),
+            ('TotalAmt',        str(amt)),
+            ('CarrierType',     carrier_type),
+            ('CarrierNum',      carrier_num),
+            ('LoveCode',        love_code),
+            ('PrintFlag',       print_flag),
+            ('ItemName',        f'機場接送定金（訂單#{order.id}）'),
+            ('ItemCount',       '1'),
+            ('ItemUnit',        '筆'),
+            ('ItemPrice',       str(amt)),
+            ('ItemAmt',         str(amt)),
+            ('Comment',         ''),
+            ('CreateStatusTime', ''),
+            ('Status',          '1'),
+            ('BuyerUBN',        buyer_uni_no),
+        ]
 
-        timestamp = int(datetime.now().timestamp())
-        resend_mark = '0'
-
-        params = {
-            'RespondType':  'JSON',
-            'Version':      '1.4',
-            'TimeStamp':    timestamp,
-            'MerchantOrderNo': f'INV{order.id}',
-            'Status':       '1',               # 立即開立
-            'Category':     'B2C' if not buyer_uni_no else 'B2B',
-            'BuyerName':    buyer_name,
-            'BuyerEmail':   order.email or '',
-            'BuyerUBN':     buyer_uni_no,
-            'CarrierType':  carrier_type,
-            'CarrierNum':   carrier_num,
-            'PrintFlag':    print_flag,
-            'TaxType':      '1',               # 應稅
-            'TaxRate':      '5',
-            'Amt':          amt_excl,
-            'TaxAmt':       tax_amt,
-            'TotalAmt':     amt,
-            'ItemName':     f'機場接送定金（訂單#{order.id}）',
-            'ItemCount':    '1',
-            'ItemUnit':     '筆',
-            'ItemAmt':      amt_excl,
-            'ItemTaxAmt':   tax_amt,
-            'Comment':      '',
-            'LoveCode':     love_code if invoice_type == 'donate' else '',
-        }
-
-        post_data_str = urllib.parse.urlencode(params)
-        post_data_enc = ezpay_invoice_encrypt(post_data_str)
+        from urllib.parse import urlencode
+        query = urlencode(params)
+        post_data_enc = ezpay_invoice_encrypt(query)
 
         resp = requests.post(api_url, data={
             'MerchantID_': EZPAY_MERCHANT_ID,
@@ -319,24 +320,23 @@ def issue_ezpay_invoice(order, invoice_type, carrier='', tax_id='', company_name
         }, timeout=10)
 
         result = resp.json()
-        app.logger.info(f'ezPay invoice result: {result}')
         print(f'ezPay invoice result: {result}', flush=True)
 
         if result.get('Status') == 'SUCCESS':
+            import json as _json
             inv_data = result.get('Result', {})
-            inv_no   = inv_data.get('InvoiceNumber', '')
-            inv_date = inv_data.get('InvoiceDate', '')
-            app.logger.info(f'Invoice issued: {inv_no} ({inv_date})')
+            if isinstance(inv_data, str):
+                inv_data = _json.loads(inv_data)
+            inv_no = inv_data.get('InvoiceNumber', '')
+            print(f'Invoice issued: {inv_no}', flush=True)
             return inv_no
         else:
-            app.logger.warning(f'ezPay invoice failed: {result.get("Message")}')
             print(f'ezPay invoice failed: {result.get("Message")}', flush=True)
             return None
 
     except Exception as e:
         app.logger.error(f'issue_ezpay_invoice error: {e}')
         return None
-
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 
 user_sessions = {}
