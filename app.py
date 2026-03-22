@@ -3097,11 +3097,17 @@ def _show_quote_result(reply_token, session, user_id):
     class FakeOrder:
         pass
     o = FakeOrder()
-    o.airport         = session.get('quote_airport', '')
-    # 報價以最後停靠點（最遠地點）為基礎計算車資
+    o.airport          = session.get('quote_airport', '')
+    o.night_fee        = False
+    o.sign_board       = False
+    o.child_seat_count = 0
+    o.pet              = False
+    o.booking_date     = session.get('quote_date', '')  # ← 先設定日期
+    o.extra_stop_fee   = 0
+
+    # 找基本車資最高的地點
     quote_stops = session.get('quote_stops', [])
     all_locs = [session.get('quote_pickup', '')] + quote_stops
-    # 找基本車資最高的地點
     best_loc = session.get('quote_pickup', '')
     best_price = 0
     for loc in all_locs:
@@ -3619,7 +3625,15 @@ def build_quote_from_session(session):
         pass
     o = FakeOrder()
     o.airport          = session.get('airport', '')
-    # 以最後停靠點為終點計算基本車資
+    o.night_fee        = session.get('night_fee', False)
+    o.sign_board       = session.get('sign_board', False)
+    o.child_seat_count = session.get('child_seat_count', 0)
+    o.pet              = session.get('pet', False)
+    o.booking_date     = session.get('date', '')  # ← 先設定
+    o.extra_stop_fee   = session.get('extra_stop_fee', 0)
+    o._8th_guest_fee   = session.get('8th_guest_fee', 0)
+
+    # 找基本車資最高的地點
     _extra_stops = session.get('extra_stops', [])
     all_locs = [session.get('pickup', '')] + _extra_stops
     best_loc = session.get('pickup', '')
