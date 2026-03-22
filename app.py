@@ -3104,13 +3104,19 @@ def _show_quote_result(reply_token, session, user_id):
     o.pet              = False
     o.booking_date     = session.get('quote_date', '')
     o.extra_stop_fee   = 0
-    o.pickup_location  = session.get('quote_pickup', '')
-    o.night_fee       = False
-    o.sign_board      = False
-    o.child_seat_count = 0
-    o.pet             = False
-    o.booking_date    = session.get('quote_date', '')
-    o.extra_stop_fee  = 0
+
+    # 取出發地＋所有停靠點中基本車資最高的地點
+    quote_stops = session.get('quote_stops', [])
+    all_locs = [session.get('quote_pickup', '')] + quote_stops
+    best_loc = session.get('quote_pickup', '')
+    best_price = 0
+    for loc in all_locs:
+        o.pickup_location = loc
+        _q = calculate_quote(o)
+        if _q['base_price'] > best_price:
+            best_price = _q['base_price']
+            best_loc = loc
+    o.pickup_location = best_loc
 
     quote = calculate_quote(o)
 
@@ -3620,17 +3626,21 @@ def build_quote_from_session(session):
     o.booking_date     = session.get('date', '')
     o.extra_stop_fee   = session.get('extra_stop_fee', 0)
     o._8th_guest_fee   = session.get('8th_guest_fee', 0)
-    o.pickup_location  = session.get('pickup', '')
-    o.night_fee        = session.get('night_fee', False)
-    o.sign_board       = session.get('sign_board', False)
-    o.child_seat_count = session.get('child_seat_count', 0)
-    o.pet              = session.get('pet', False)
-    o.booking_date     = session.get('date', '')
-    o.extra_stop_fee   = session.get('extra_stop_fee', 0)
-    o._8th_guest_fee   = session.get('8th_guest_fee', 0)
+
+    # 取出發地＋所有停靠點中基本車資最高的地點
+    _extra_stops = session.get('extra_stops', [])
+    all_locs = [session.get('pickup', '')] + _extra_stops
+    best_loc = session.get('pickup', '')
+    best_price = 0
+    for loc in all_locs:
+        o.pickup_location = loc
+        _q = calculate_quote(o)
+        if _q['base_price'] > best_price:
+            best_price = _q['base_price']
+            best_loc = loc
+    o.pickup_location = best_loc
 
     extra_stops = session.get('extra_stops', [])
-
     quote = calculate_quote(o)
 
     # 多點停靠加收
