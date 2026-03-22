@@ -1788,9 +1788,14 @@ def newebpay_notify():
                     messages=[TextMessage(text=notice_text)]
                 )
             )
+    except Exception as e:
+        app.logger.error(f'Post-payment push notice error: {e}')
+
+    try:
         send_quote_to_customer(order)
     except Exception as e:
-        app.logger.error(f'Post-payment push error: {e}')
+        app.logger.error(f'Post-payment send_quote error: {e}')
+        print(f'send_quote error: {e}', flush=True)
 
     # ── 自動開立 ezPay 電子發票 ──────────────────────────────────
     print(f'=== 開始開立發票，order_id={order.id} ===', flush=True)
