@@ -3095,7 +3095,17 @@ def _show_quote_result(reply_token, session, user_id):
     o.airport         = session.get('quote_airport', '')
     # 報價以最後停靠點（最遠地點）為基礎計算車資
     quote_stops = session.get('quote_stops', [])
-    o.pickup_location = quote_stops[-1] if quote_stops else session.get('quote_pickup', '')
+    all_locs = [session.get('quote_pickup', '')] + quote_stops
+    # 找基本車資最高的地點
+    best_loc = session.get('quote_pickup', '')
+    best_price = 0
+    for loc in all_locs:
+        o.pickup_location = loc
+        _q = calculate_quote(o)
+        if _q['base_price'] > best_price:
+            best_price = _q['base_price']
+            best_loc = loc
+    o.pickup_location = best_loc
     o.night_fee       = False
     o.sign_board      = False
     o.child_seat_count = 0
@@ -3606,7 +3616,16 @@ def build_quote_from_session(session):
     o.airport          = session.get('airport', '')
     # 以最後停靠點為終點計算基本車資
     _extra_stops = session.get('extra_stops', [])
-    o.pickup_location = _extra_stops[-1] if _extra_stops else session.get('pickup', '')
+    all_locs = [session.get('pickup', '')] + _extra_stops
+    best_loc = session.get('pickup', '')
+    best_price = 0
+    for loc in all_locs:
+        o.pickup_location = loc
+        _q = calculate_quote(o)
+        if _q['base_price'] > best_price:
+            best_price = _q['base_price']
+            best_loc = loc
+    o.pickup_location = best_loc
     o.night_fee        = session.get('night_fee', False)
     o.sign_board       = session.get('sign_board', False)
     o.child_seat_count = session.get('child_seat_count', 0)
