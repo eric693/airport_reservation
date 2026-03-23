@@ -1773,6 +1773,7 @@ def newebpay_notify():
         app.logger.info(f'Newebpay payment not success: status={status}')
         return 'OK'
 
+    print(f'=== TradeInfo 前20碼：{trade_info_enc[:20] if trade_info_enc else "空"}，長度：{len(trade_info_enc)}', flush=True)
     data = newebpay_decrypt(trade_info_enc)
     merchant_order_no = data.get('MerchantOrderNo', '')
     if not merchant_order_no.startswith('DEP'):
