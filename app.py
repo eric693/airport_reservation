@@ -560,6 +560,40 @@ def callback():
 def ping():
     return 'pong'
 
+@app.route('/admin/test_newebpay')
+@admin_required
+def admin_test_newebpay():
+    """測試藍新金流加解密是否正確"""
+    test_data = urllib.parse.urlencode({
+        'MerchantID': NEWEBPAY_MERCHANT_ID,
+        'RespondType': 'JSON',
+        'TimeStamp': '1234567890',
+        'Version': '2.0',
+        'MerchantOrderNo': 'TEST001',
+        'Amt': 315,
+        'ItemDesc': '測試',
+    })
+    
+    try:
+        encrypted = newebpay_encrypt(test_data)
+        decrypted = newebpay_decrypt(encrypted)
+        sha = newebpay_sha256(encrypted)
+        
+        result = {
+            'status': 'OK',
+            'original': test_data,
+            'encrypted_length': len(encrypted),
+            'decrypted': decrypted,
+            'sha256': sha[:20] + '...',
+            'hash_key_len': len(NEWEBPAY_HASH_KEY),
+            'hash_iv_len': len(NEWEBPAY_HASH_IV),
+        }
+    except Exception as e:
+        result = {'status': 'ERROR', 'error': str(e)}
+    
+    import json
+    return f'<pre>{json.dumps(result, ensure_ascii=False, indent=2)}</pre>'
+
 # ── Admin: Orders ────────────────────────────────────────────────────
 @app.route('/admin/ai', methods=['GET'])
 @admin_required
