@@ -101,6 +101,33 @@
   {% endif %}
   {% endwith %}
 
+  <!-- Bot 功能模式切換 -->
+  <div class="card">
+    <div class="card-title">LINE Bot 功能模式</div>
+    <p style="font-size:13px;color:#4A5568;margin-bottom:16px;">
+      選擇 Bot 目前對外提供的功能範圍。切換後立即生效，不需重新啟動。
+    </p>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <form method="POST" action="/admin/bot_mode">
+        <input type="hidden" name="mode" value="full">
+        <button type="submit" class="btn {% if bot_mode != 'ai_only' %}btn-primary{% else %}btn-secondary{% endif %}"
+          style="{% if bot_mode != 'ai_only' %}background:#4A9B8F;color:#fff;{% else %}background:#EDF2F7;color:#4A5568;{% endif %}">
+          ✅ 全功能模式
+        </button>
+      </form>
+      <form method="POST" action="/admin/bot_mode">
+        <input type="hidden" name="mode" value="ai_only">
+        <button type="submit" class="btn {% if bot_mode == 'ai_only' %}btn-primary{% else %}btn-secondary{% endif %}"
+          style="{% if bot_mode == 'ai_only' %}background:#E05C00;color:#fff;{% else %}background:#EDF2F7;color:#4A5568;{% endif %}">
+          🤖 純AI客服模式
+        </button>
+      </form>
+    </div>
+    <p style="font-size:12px;color:#718096;margin-top:12px;">
+      目前模式：<strong>{% if bot_mode == 'ai_only' %}純AI客服模式（隱藏預約、報價、查詢訂單）{% else %}全功能模式{% endif %}</strong>
+    </p>
+  </div>
+
   <!-- 傳送訊息 -->
   <div class="card">
     <div class="card-title">傳送訊息給客人</div>

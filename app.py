@@ -600,13 +600,25 @@ def admin_test_newebpay():
 def admin_ai_control():
     paused = [uid for uid, s in user_sessions.items() if s.get('step') == 'human_mode']
     visitors = LineVisitor.query.order_by(LineVisitor.last_seen.desc()).all()
-    return render_template('admin/ai_control.html', paused=paused, visitors=visitors)
+    bot_mode = SiteSetting.get('bot_mode', 'full')
+    return render_template('admin/ai_control.html', paused=paused, visitors=visitors, bot_mode=bot_mode)
 
 @app.route('/admin/visitors')
 @admin_required
 def admin_visitors():
     visitors = LineVisitor.query.order_by(LineVisitor.last_seen.desc()).all()
     return render_template('admin/visitors.html', visitors=visitors)
+
+@app.route('/admin/bot_mode', methods=['POST'])
+@admin_required
+def admin_set_bot_mode():
+    mode = request.form.get('mode', 'full')
+    if mode not in ('full', 'ai_only'):
+        mode = 'full'
+    SiteSetting.set('bot_mode', mode)
+    flash('Bot 模式已更新。')
+    return redirect('/admin/ai')
+
 
 @app.route('/admin/ai/pause/direct', methods=['POST'])
 @admin_required
@@ -2334,18 +2346,30 @@ def _handle_message_inner(event):
         return
 
     if text in ['預約', '訂車', '機場接送', '開始預約']:
-        user_sessions[user_id] = {'step': 'choose_service'}
-        send_service_menu(event.reply_token)
+        if get_bot_mode() == 'ai_only':
+            user_sessions[user_id] = {'step': 'ai_chat'}
+            reply_text(event.reply_token, '目前預約功能暫停服務，有任何問題歡迎直接詢問客服小飛 ✈️')
+        else:
+            user_sessions[user_id] = {'step': 'choose_service'}
+            send_service_menu(event.reply_token)
         return
 
     if text in ['報價', '我要報價', '查詢報價', '快速報價']:
-        user_sessions[user_id] = {'step': 'quote_service'}
-        send_quote_service_menu(event.reply_token)
+        if get_bot_mode() == 'ai_only':
+            user_sessions[user_id] = {'step': 'ai_chat'}
+            reply_text(event.reply_token, '目前報價功能暫停服務，有任何問題歡迎直接詢問客服小飛 ✈️')
+        else:
+            user_sessions[user_id] = {'step': 'quote_service'}
+            send_quote_service_menu(event.reply_token)
         return
-    
+
     if text == '查詢訂單':
-        user_sessions[user_id] = {'step': 'query_name'}
-        reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
+        if get_bot_mode() == 'ai_only':
+            user_sessions[user_id] = {'step': 'ai_chat'}
+            reply_text(event.reply_token, '目前訂單查詢功能暫停服務，有任何問題歡迎直接詢問客服小飛 ✈️')
+        else:
+            user_sessions[user_id] = {'step': 'query_name'}
+            reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
         return
 
     if step == 'human_mode':
@@ -2361,15 +2385,16 @@ def _handle_message_inner(event):
         return
 
     if step == 'ai_chat':
-        if any(kw in text for kw in ['預約', '訂車', '我要訂', '我想訂', '幫我訂']):
-            user_sessions[user_id] = {'step': 'choose_service'}
-            reply_text(event.reply_token, '好的！幫您切換到預約流程。')
-            send_service_menu(event.reply_token)
-            return
-        if any(kw in text for kw in ['查詢', '我的訂單', '訂單狀態']):
-            user_sessions[user_id] = {'step': 'query_name'}
-            reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
-            return
+        if get_bot_mode() != 'ai_only':
+            if any(kw in text for kw in ['預約', '訂車', '我要訂', '我想訂', '幫我訂']):
+                user_sessions[user_id] = {'step': 'choose_service'}
+                reply_text(event.reply_token, '好的！幫您切換到預約流程。')
+                send_service_menu(event.reply_token)
+                return
+            if any(kw in text for kw in ['查詢', '我的訂單', '訂單狀態']):
+                user_sessions[user_id] = {'step': 'query_name'}
+                reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
+                return
         ai_reply = ask_openai(user_id, text)
         reply_text(event.reply_token, ai_reply)
         return
@@ -2809,8 +2834,12 @@ def _handle_postback_inner(event):
         )
 
     elif data == 'start_quote':
-        user_sessions[user_id] = {'step': 'quote_service'}
-        send_quote_service_menu(event.reply_token)
+        if get_bot_mode() == 'ai_only':
+            user_sessions[user_id] = {'step': 'ai_chat'}
+            reply_text(event.reply_token, '目前報價功能暫停服務，有任何問題歡迎直接詢問客服小飛 ✈️')
+        else:
+            user_sessions[user_id] = {'step': 'quote_service'}
+            send_quote_service_menu(event.reply_token)
 
     elif data == 'quote_service_departure':
         session['quote_service'] = '送機'
@@ -2858,8 +2887,12 @@ def _handle_postback_inner(event):
         reply_text(event.reply_token, f'請輸入預計日期（格式：{datetime.now().strftime("%Y-%m-%d")}）：')
         
     elif data == 'start_booking':
-        user_sessions[user_id] = {'step': 'choose_service'}
-        send_service_menu(event.reply_token)
+        if get_bot_mode() == 'ai_only':
+            user_sessions[user_id] = {'step': 'ai_chat'}
+            reply_text(event.reply_token, '目前預約功能暫停服務，有任何問題歡迎直接詢問客服小飛 ✈️')
+        else:
+            user_sessions[user_id] = {'step': 'choose_service'}
+            send_service_menu(event.reply_token)
 
     elif data == 'start_ai_chat':
         user_sessions[user_id] = {'step': 'ai_chat'}
@@ -2871,8 +2904,12 @@ def _handle_postback_inner(event):
         )
 
     elif data == 'query_order_start':
-        user_sessions[user_id] = {'step': 'query_name'}
-        reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
+        if get_bot_mode() == 'ai_only':
+            user_sessions[user_id] = {'step': 'ai_chat'}
+            reply_text(event.reply_token, '目前訂單查詢功能暫停服務，有任何問題歡迎直接詢問客服小飛 ✈️')
+        else:
+            user_sessions[user_id] = {'step': 'query_name'}
+            reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
 
     # ── 新功能：電子發票 postback ──────────────────────────────────
     elif data == 'invoice_personal':
@@ -3598,6 +3635,11 @@ AI_FAQ_DEFAULTS = [
 ]
 
 
+def get_bot_mode():
+    """取得 LINE Bot 功能模式：'full'（全功能）或 'ai_only'（純AI客服）"""
+    return SiteSetting.get('bot_mode', 'full')
+
+
 def get_ai_system_prompt():
     import json as _json
     name             = SiteSetting.get('ai_name',             AI_CONFIG_DEFAULTS['ai_name'])
@@ -3840,6 +3882,27 @@ def ask_openai(user_id, user_message, order_context=None):
 
 
 def send_main_menu(reply_token):
+    bot_mode = get_bot_mode()
+    if bot_mode == 'ai_only':
+        buttons = [
+            {"type": "button", "action": {"type": "postback", "label": "詢問客服 / 了解服務", "data": "start_ai_chat"},
+             "style": "primary", "color": "#4A9B8F"},
+            {"type": "button", "action": {"type": "postback", "label": "👤 真人客服", "data": "request_human"},
+             "style": "secondary", "color": "#E05C00"},
+        ]
+    else:
+        buttons = [
+            {"type": "button", "action": {"type": "postback", "label": "開始預約", "data": "start_booking"},
+             "style": "primary", "color": "#4A9B8F"},
+            {"type": "button", "action": {"type": "postback", "label": "詢問客服 / 了解服務", "data": "start_ai_chat"},
+             "style": "secondary"},
+            {"type": "button", "action": {"type": "postback", "label": "查詢我的訂單", "data": "query_order_start"},
+             "style": "secondary"},
+            {"type": "button", "action": {"type": "postback", "label": "我要報價", "data": "start_quote"},
+             "style": "secondary", "color": "#2B6CB0"},
+            {"type": "button", "action": {"type": "postback", "label": "👤 真人客服", "data": "request_human"},
+             "style": "secondary", "color": "#E05C00"},
+        ]
     bubble = {
         "type": "bubble",
         "header": {
@@ -3852,18 +3915,7 @@ def send_main_menu(reply_token):
         },
         "body": {
             "type": "box", "layout": "vertical", "spacing": "md",
-            "contents": [
-                {"type": "button", "action": {"type": "postback", "label": "開始預約", "data": "start_booking"},
-                 "style": "primary", "color": "#4A9B8F"},
-                {"type": "button", "action": {"type": "postback", "label": "詢問客服 / 了解服務", "data": "start_ai_chat"},
-                 "style": "secondary"},
-                {"type": "button", "action": {"type": "postback", "label": "查詢我的訂單", "data": "query_order_start"},
-                 "style": "secondary"},
-                {"type": "button", "action": {"type": "postback", "label": "我要報價", "data": "start_quote"},
-                "style": "secondary", "color": "#2B6CB0"},
-                {"type": "button", "action": {"type": "postback", "label": "👤 真人客服", "data": "request_human"},
-                "style": "secondary", "color": "#E05C00"},
-            ]
+            "contents": buttons
         }
     }
     send_flex(reply_token, 'Taiwan Top Service 機場接送服務', bubble)
