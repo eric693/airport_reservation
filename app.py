@@ -366,6 +366,14 @@ def keep_alive():
             time.sleep(840)
 
 # ── Auto-notify scheduler ───────────────────────────────────────────
+def cleanup_old_visitors():
+    with app.app_context():
+        cutoff = datetime.utcnow() - timedelta(days=1)
+        deleted = LineVisitor.query.filter(LineVisitor.last_seen < cutoff).delete()
+        db.session.commit()
+        if deleted:
+            app.logger.info(f'[cleanup] 已移除 {deleted} 筆超過1天未活躍的訪客')
+
 def check_and_notify():
     with app.app_context():
         now = datetime.utcnow() + timedelta(hours=8)
@@ -4397,6 +4405,7 @@ def handle_driver_grab(reply_token, driver_line_id, job_id):
 if __name__ == '__main__':
     scheduler = BackgroundScheduler()
     scheduler.add_job(check_and_notify, 'interval', minutes=1)
+    scheduler.add_job(cleanup_old_visitors, 'interval', hours=1)
     scheduler.start()
 
     t = threading.Thread(target=keep_alive, daemon=True)
@@ -4407,6 +4416,7 @@ if __name__ == '__main__':
 else:
     scheduler = BackgroundScheduler()
     scheduler.add_job(check_and_notify, 'interval', minutes=1)
+    scheduler.add_job(cleanup_old_visitors, 'interval', hours=1)
     scheduler.start()
 
     t = threading.Thread(target=keep_alive, daemon=True)
