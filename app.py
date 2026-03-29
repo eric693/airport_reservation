@@ -684,7 +684,7 @@ def admin_ai_send_message():
 @app.route('/admin')
 @admin_required
 def admin_index():
-    return redirect(url_for('admin_ai_control'))
+    return redirect(url_for('admin_index_full'))
 
 @app.route('/admin/_orders')
 @admin_required
