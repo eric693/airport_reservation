@@ -2374,13 +2374,14 @@ def _handle_message_inner(event):
 
     if step == 'human_mode':
         # 真人客服模式：AI 靜默，客人輸入「預約」可重新進入預約流程
-        if any(kw in text for kw in ['預約', '訂車', '我要訂', '我想訂', '幫我訂']):
-            user_sessions[user_id] = {'step': 'choose_service'}
-            reply_text(event.reply_token, '好的！幫您切換到預約流程。')
-            send_service_menu(event.reply_token)
-        elif any(kw in text for kw in ['查詢', '我的訂單', '訂單狀態']):
-            user_sessions[user_id] = {'step': 'query_name'}
-            reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
+        if get_bot_mode() != 'ai_only':
+            if any(kw in text for kw in ['預約', '訂車', '我要訂', '我想訂', '幫我訂']):
+                user_sessions[user_id] = {'step': 'choose_service'}
+                reply_text(event.reply_token, '好的！幫您切換到預約流程。')
+                send_service_menu(event.reply_token)
+            elif any(kw in text for kw in ['查詢', '我的訂單', '訂單狀態']):
+                user_sessions[user_id] = {'step': 'query_name'}
+                reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
         # 其餘訊息靜默，等真人客服回應
         return
 
