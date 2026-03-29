@@ -892,6 +892,126 @@ def admin_ai_resume(line_user_id):
     next_url = request.form.get('next') or url_for('admin_index')
     return redirect(next_url)
 
+@app.route('/admin/ai/config', methods=['GET'])
+@admin_required
+def admin_ai_config():
+    import json as _json
+    faq_raw = SiteSetting.get('ai_faq', '')
+    try:
+        faqs = _json.loads(faq_raw) if faq_raw else AI_FAQ_DEFAULTS
+    except Exception:
+        faqs = AI_FAQ_DEFAULTS
+    config = {k: SiteSetting.get(k, v) for k, v in AI_CONFIG_DEFAULTS.items()}
+    return render_template('admin/ai_config.html', config=config, faqs=faqs)
+
+@app.route('/admin/ai/config/save', methods=['POST'])
+@admin_required
+def admin_ai_config_save():
+    for field in AI_CONFIG_DEFAULTS:
+        val = request.form.get(field, '').strip()
+        if val:
+            SiteSetting.set(field, val)
+    flash('AI 客服設定已儲存')
+    return redirect(url_for('admin_ai_config'))
+
+@app.route('/admin/ai/config/faq/add', methods=['POST'])
+@admin_required
+def admin_ai_config_faq_add():
+    import json as _json
+    q = request.form.get('q', '').strip()
+    a = request.form.get('a', '').strip()
+    if not q or not a:
+        flash('問題與回答不能為空')
+        return redirect(url_for('admin_ai_config'))
+    faq_raw = SiteSetting.get('ai_faq', '')
+    try:
+        faqs = _json.loads(faq_raw) if faq_raw else list(AI_FAQ_DEFAULTS)
+    except Exception:
+        faqs = list(AI_FAQ_DEFAULTS)
+    faqs.append({'q': q, 'a': a})
+    SiteSetting.set('ai_faq', _json.dumps(faqs, ensure_ascii=False))
+    flash(f'已新增 FAQ')
+    return redirect(url_for('admin_ai_config'))
+
+@app.route('/admin/ai/config/faq/<int:idx>/edit', methods=['POST'])
+@admin_required
+def admin_ai_config_faq_edit(idx):
+    import json as _json
+    q = request.form.get('q', '').strip()
+    a = request.form.get('a', '').strip()
+    if not q or not a:
+        flash('問題與回答不能為空')
+        return redirect(url_for('admin_ai_config'))
+    faq_raw = SiteSetting.get('ai_faq', '')
+    try:
+        faqs = _json.loads(faq_raw) if faq_raw else list(AI_FAQ_DEFAULTS)
+    except Exception:
+        faqs = list(AI_FAQ_DEFAULTS)
+    if 0 <= idx < len(faqs):
+        faqs[idx] = {'q': q, 'a': a}
+        SiteSetting.set('ai_faq', _json.dumps(faqs, ensure_ascii=False))
+        flash('FAQ 已更新')
+    return redirect(url_for('admin_ai_config'))
+
+@app.route('/admin/ai/config/faq/<int:idx>/delete', methods=['POST'])
+@admin_required
+def admin_ai_config_faq_delete(idx):
+    import json as _json
+    faq_raw = SiteSetting.get('ai_faq', '')
+    try:
+        faqs = _json.loads(faq_raw) if faq_raw else list(AI_FAQ_DEFAULTS)
+    except Exception:
+        faqs = list(AI_FAQ_DEFAULTS)
+    if 0 <= idx < len(faqs):
+        removed = faqs.pop(idx)
+        SiteSetting.set('ai_faq', _json.dumps(faqs, ensure_ascii=False))
+        flash(f'已刪除：{removed["q"][:40]}')
+    return redirect(url_for('admin_ai_config'))
+
+@app.route('/admin/ai/config/sync', methods=['POST'])
+@admin_required
+def admin_ai_config_sync():
+    import json as _json
+    for k, v in AI_CONFIG_DEFAULTS.items():
+        SiteSetting.set(k, v)
+    SiteSetting.set('ai_faq', _json.dumps(AI_FAQ_DEFAULTS, ensure_ascii=False))
+    flash('已從程式碼預設值同步所有 AI 設定（共 {} 筆 FAQ）'.format(len(AI_FAQ_DEFAULTS)))
+    return redirect(url_for('admin_ai_config'))
+
+@app.route('/admin/ai/test', methods=['POST'])
+@admin_required
+def admin_ai_test():
+    msg = request.form.get('test_message', '').strip()
+    if not msg:
+        return jsonify({'error': '請輸入測試訊息'}), 400
+    if not OPENAI_API_KEY:
+        return jsonify({'error': 'OpenAI API Key 未設定，無法測試'}), 400
+    system = get_ai_system_prompt()
+    try:
+        resp = requests.post(
+            'https://api.openai.com/v1/chat/completions',
+            headers={'Authorization': f'Bearer {OPENAI_API_KEY}', 'Content-Type': 'application/json'},
+            json={'model': 'gpt-4o-mini', 'messages': [
+                {'role': 'system', 'content': system},
+                {'role': 'user', 'content': msg}
+            ], 'max_tokens': 400, 'temperature': 0.75},
+            timeout=15
+        )
+        data = resp.json()
+        reply = data['choices'][0]['message']['content'].strip()
+        return jsonify({'reply': reply})
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
+
+@app.route('/admin/ai/config/preview', methods=['GET'])
+@admin_required
+def admin_ai_config_preview():
+    from flask import make_response
+    prompt = get_ai_system_prompt()
+    resp = make_response(prompt, 200)
+    resp.headers['Content-Type'] = 'text/plain; charset=utf-8'
+    return resp
+
 @app.route('/admin/order/<int:order_id>/status', methods=['POST'])
 @admin_required
 def admin_update_status(order_id):
@@ -3434,6 +3554,98 @@ def _push_est_travel(user_id, session):
         app.logger.warning(f'_push_est_travel error: {e}', exc_info=True)
 
 # ── OpenAI AI 客服 ────────────────────────────────────────────────────
+
+AI_CONFIG_DEFAULTS = {
+    'ai_name': '小飛',
+    'ai_personality': '親切、有溫度，像朋友一樣，但仍保持專業。可以輕鬆閒聊，但永遠把服務放在心上。',
+    'ai_capabilities': '1. 回答機場接送相關問題（費用、流程、車型、注意事項）\n2. 查詢客人的訂單（需要姓名或電話，請引導他們輸入「查詢訂單」由系統處理）\n3. 引導客人預約（請他輸入「預約」進入正式預約流程）\n4. 一般閒聊，讓客人感到輕鬆',
+    'ai_company_info': '- 公司名稱：樂高小客車租賃有限公司（Le Gao Car Rental Co., Ltd.）\n- 統一編號：50978670\n- 汽車運輸業營業執照：交營字第40-0032736號\n- 新北市小客車租賃商業同業公會：新北小車證字第189號\n- FB：Taiwan Top Service（有認證）\n- 官方 LINE：Taiwan Top Service（藍色盾牌，有認證）\n- LINE ID：@taiwantop\n- 若客人詢問公司名稱、執照、統編、社群帳號等資訊，請如實回答以上內容。',
+    'ai_pricing_info': '- 基本車資依出發地區域與機場而定（例：台中→桃園機場約 NT$2,200）\n- 夜間費（22:00–06:00）：目前不指定車款優惠活動不加收夜間費用\n- 舉牌服務：+NT$300\n- 兒童安全座椅：+NT$200 / 張（最多2張）\n- 寵物同行：+NT$300（必須裝籠，行車中不可放出）\n- 假日/旺季期間：+NT$300\n- 多點停靠：+NT$200（5公里內）/ +NT$300（12公里內）/ +NT$400（18公里內）/ +NT$500（18公里以上）\n- 四至七天內預約：+NT$300\n- 二至三天內預約：+NT$600\n- 當天及前一天：請聯繫真人客服',
+    'ai_vehicles_info': '我們採「不指定車款」優惠方案，一切依本公司調度派遣為主，以下為參考車款（全部為無菸車）：\n\n五座轎車類（最多 3 人 3 件）：\n- Lexus ES、Mercedes-Benz E-Class、Tesla Model S\n\n五到七座車款（最多 4 人 4 件）：\n- Toyota RAV4、Luxgen N7、Mercedes-Benz EQB、Tesla Model Y、Tesla Model X\n- Toyota Sienna、Toyota Alphard、Lexus LM\n\n九人座車款（最多 7 人 7 件）：\n- KIA Carnival、Toyota Granvia、Volkswagen Caravelle T6、Hyundai Staria\n- Mercedes-Benz V-Class、Volkswagen Crafter、Mercedes-Benz Sprinter\n\n若被問到「不指定車款有哪些」，請列出以上車款並說明一切以本公司調度為主。',
+    'ai_pickup_flow': '我們流程是這樣，您落地 20 分鐘左右時，司機會與您聯繫，請您保持手機暢通，待您拿到行李後打給司機，司機會跟您約見面點，謝謝您。',
+    'ai_reply_principles': '- 全程使用繁體中文\n- 回覆要簡潔口語，不要太正式或太長\n- 任何涉及人數、行李件數的問題，一律回答「不指定車款優惠活動僅限於「最多」七人七件標準30吋（含推車）」，並引導輸入「預約」或「報價」\n- 若客人問具體訂單狀態，請他輸入「查詢訂單」由系統查詢\n- 若客人要預約，請他輸入「預約」進入預約流程\n- 不確定的資訊不要亂猜，誠實說不確定並建議聯繫客服\n- 不要自行計算或判斷七天內加收費用，一律請客人輸入「預約」進入系統，由系統自動計算所有費用\n- 若客人提供預約資料詢問費用，不要幫客人整理確認單或計算加收費用，直接請他輸入「預約」讓系統處理\n- 若客人詢問任何地區或路線的費用、車資、多少錢等問題，不要直接報價，請引導他輸入「報價」使用快速報價系統取得準確報價\n- 若客人提到異動、更改、取消、退款、找真人、真人服務等，一律回答：「請輸入『真人客服』，稍後會有真人客服人員來服務您，請稍候！」',
+}
+
+AI_FAQ_DEFAULTS = [
+    {"q": "機場接送要多久前預約？", "a": "建議最晚兩周前先預約。線上預約系統僅開放 8 天後以上的日期，7 天內請直接聯繫真人客服接單。溫馨提醒：7 天內加收 NT$300，3 天內再加收 NT$300（合計 NT$600）。"},
+    {"q": "如果航班延誤怎麼辦？", "a": "我們接機是依照航班實際落地為主等待 90 分鐘，不用擔心航班有提早或延誤問題。除非耽誤超過兩個小時，超過兩小時（第三小時起算）會加收 NT$300／每小時等待費用。"},
+    {"q": "半夜或清晨也可以叫車嗎？", "a": "我們客服跟調度人員都是 24 小時服務，隨時可以跟我們叫車。"},
+    {"q": "車款有哪些？／不指定車款有哪些？", "a": "以下為不指定車款優惠活動參考車款，全部為無菸車，一切依照本公司調度派遣為主：\n五座轎車類（最多3人3件）：Lexus ES、Mercedes-Benz E-Class、Tesla Model S\n五到七座車款（最多4人4件）：Toyota RAV4、Luxgen N7、Mercedes-Benz EQB、Tesla Model Y、Tesla Model X、Toyota Sienna、Toyota Alphard、Lexus LM\n九人座車款（最多7人7件）：KIA Carnival、Toyota Granvia、Volkswagen Caravelle T6、Hyundai Staria、Mercedes-Benz V-Class、Volkswagen Crafter、Mercedes-Benz Sprinter"},
+    {"q": "車型可以選擇嗎？", "a": "可以指定車型，您提供給我人數跟行李件數，好讓我報指定車款可以乘載的車款報價給您。"},
+    {"q": "行李有數量限制嗎？人數上限是幾人？", "a": "不指定車款優惠活動僅限於「最多」七人七件標準 30 吋（含推車）。如需進一步預約或報價，請輸入「預約」或「報價」，讓我幫您進入下一個流程，謝謝您！"},
+    {"q": "小孩需要安全座椅嗎？可以提供嗎？", "a": "依法規定，四歲以下兒童需使用安全座椅。安全座椅／增高墊加收 NT$200／座，請提供幾歲用的。"},
+    {"q": "臨時更改或取消怎麼辦？", "a": "七天以上異動都可以，七天內無法異動，七天內要取消恕不退還。"},
+    {"q": "費用如何計算？夜間會加價嗎？", "a": "報價請提供地區來提供報價或參考我們報價參考值。目前優惠活動不加收夜間費用，如指定車款在 22:00–06:00 會加收 NT$300。7 天內預約加收 NT$300，3 天內再加收 NT$300（合計 NT$600）。"},
+    {"q": "請問公司在哪裡？", "a": "公司註冊在新北市板橋，桃園跟台中都有辦公室，沒對外開放。"},
+    {"q": "請問司機從哪裡出發？是台中車嗎？是台北車嗎？", "a": "我們司機有北部也有中部，司機有送就有接，不用擔心司機是哪裡的車，主要是可以服務好每一位貴賓，安全接送最重要。"},
+    {"q": "來回可以再優惠嗎？多叫一台有優惠嗎？", "a": "目前已經是優惠活動，沒有再有任何優惠，回程還需要關注航班、等待航班、等待您出關接您，沒有加價已經是最大優惠了。"},
+    {"q": "多點停靠費用怎麼算？", "a": "多點報價如下，每增加一個停靠點依距離加收：5公里內 +NT$200、12公里內 +NT$300、18公里內 +NT$400、18公里以上 +NT$500。"},
+    {"q": "接機的時候司機在哪裡等？怎麼聯絡？", "a": "我們流程是這樣，您落地 20 分鐘左右時，司機會與您聯繫，請您保持手機暢通，待您拿到行李後打給司機，司機會跟您約見面點，謝謝您。"},
+    {"q": "你們公司資訊是什麼？FB 或 LINE 在哪？", "a": "我們是樂高小客車租賃有限公司，統編 50978670，持有汽車運輸業營業執照（交營字第40-0032736號）。FB 和官方 LINE 搜尋「Taiwan Top Service」，有藍色盾牌認證，LINE ID：@taiwantop。"},
+    {"q": "你們是白牌嗎？合法嗎？", "a": "我們是合法合規的租賃小客車公司經營，持有汽車運輸業營業執照及新北市小客車租賃商業同業公會認證，請放心搭乘。"},
+    {"q": "你們有保險嗎？有乘客險嗎？", "a": "我們是合法合規租賃小客車公司，每台車都有投保乘客險，每人保額 500 萬元以上，請放心。"},
+    {"q": "什麼時候會給司機資料？", "a": "預約完成後，我們會在您出發日期的兩天前，將司機資料傳送給您，請留意 LINE 通知，謝謝您！"},
+    {"q": "是出門當天再匯款嗎？", "a": "您好！需要先完成支付定金，這樣才能確保您的預約順利成立。如有特殊情況，歡迎直接聯繫我們的客服處理，謝謝！"},
+    {"q": "是否有夜間收費？", "a": "目前不指定車款優惠活動不加收夜間費用，請放心預約！"},
+    {"q": "請問有收據或預約完成證明嗎？", "a": "我們無法提供收據，如需開立發票會加收 5% 費用，謝謝您！"},
+    {"q": "當天價格還會異動嗎？", "a": "現在預約完成，依照上述費用就不會再有變動，請放心！謝謝您。"},
+    {"q": "如何分享給朋友或家人預約？", "a": "您好！只要分享我們的官方 LINE 帳號給他們，就可以直接預約囉！LINE ID：@taiwantop，或點此連結加入：https://line.me/R/ti/p/@taiwantop，加入後直接說「預約」就可以開始了，謝謝您！"},
+    {"q": "我們是拼車嗎？", "a": "我們是合法合規小客車租賃公司經營，不做拼車行為，我們都是專車服務，不會有拼車問題，謝謝您！如有需要預約可以輸入「預約」，或者想先取得快速報價可以輸入「報價」。"},
+    {"q": "是專車嗎？是包車嗎？", "a": "是的，每一次服務都是專車服務，完全不會有任何拼車問題。如有需要預約可以輸入「預約」，或者想先取得快速報價可以輸入「報價」。"},
+    {"q": "我要指定車款", "a": "需要指定車款或者商務包車，請輸入「真人客服」，稍後會有專人為您服務。"},
+    {"q": "這是一個人的報價嗎？", "a": "我們是以車為單位報價，不是以人數計算，一位到七位都是一樣的價錢。如有需要預約可以輸入「預約」，或者想先取得快速報價請輸入「報價」哦！"},
+    {"q": "請問小孩幾歲前需要坐安全座椅？", "a": "依法規定，四歲以下兒童需使用安全座椅。如需租借請在預約時選擇兒童安全座椅加購，加收 NT$200／座，謝謝您！"},
+]
+
+
+def get_ai_system_prompt():
+    import json as _json
+    name             = SiteSetting.get('ai_name',             AI_CONFIG_DEFAULTS['ai_name'])
+    personality      = SiteSetting.get('ai_personality',      AI_CONFIG_DEFAULTS['ai_personality'])
+    capabilities     = SiteSetting.get('ai_capabilities',     AI_CONFIG_DEFAULTS['ai_capabilities'])
+    company_info     = SiteSetting.get('ai_company_info',     AI_CONFIG_DEFAULTS['ai_company_info'])
+    pricing_info     = SiteSetting.get('ai_pricing_info',     AI_CONFIG_DEFAULTS['ai_pricing_info'])
+    vehicles_info    = SiteSetting.get('ai_vehicles_info',    AI_CONFIG_DEFAULTS['ai_vehicles_info'])
+    pickup_flow      = SiteSetting.get('ai_pickup_flow',      AI_CONFIG_DEFAULTS['ai_pickup_flow'])
+    reply_principles = SiteSetting.get('ai_reply_principles', AI_CONFIG_DEFAULTS['ai_reply_principles'])
+
+    faq_raw = SiteSetting.get('ai_faq', '')
+    try:
+        faqs = _json.loads(faq_raw) if faq_raw else AI_FAQ_DEFAULTS
+    except Exception:
+        faqs = AI_FAQ_DEFAULTS
+
+    faq_text = ''
+    for i, item in enumerate(faqs, 1):
+        faq_text += f"\nQ{i} {item['q']}\nA：{item['a']}\n"
+
+    return f"""你是「機場接送服務」的親切客服助理，名字叫「{name}」。
+
+【個性】
+{personality}
+
+【你能做的事】
+{capabilities}
+
+【費用資訊】
+{pricing_info}
+
+【車型說明】
+{vehicles_info}
+
+【公司資訊】
+{company_info}
+
+【接機流程（客人詢問時請回覆以下內容）】
+{pickup_flow}
+
+【常見問題 FAQ】
+{faq_text}
+【回覆原則】
+{reply_principles}
+"""
+
+
 AI_SYSTEM_PROMPT = """你是「機場接送服務」的親切客服助理，名字叫「小飛」。
 
 【個性】
@@ -3606,7 +3818,7 @@ A：依法規定，四歲以下兒童需使用安全座椅。如需租借請在�
 def ask_openai(user_id, user_message, order_context=None):
     if not OPENAI_API_KEY:
         return '目前 AI 客服功能未啟用，請輸入「預約」開始預約，或輸入「查詢訂單」查詢訂單。'
-    system = AI_SYSTEM_PROMPT
+    system = get_ai_system_prompt()
     if order_context:
         system += f"\n\n【客人訂單資料（僅供參考）】\n{order_context}"
     messages = [

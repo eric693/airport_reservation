@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 客服訓練設定</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', sans-serif; background: #F4F6F8; color: #2D3748; }
+
+  /* Sidebar */
+  .sidebar { position: fixed; top: 0; left: 0; width: 220px; height: 100vh; background: #1A2B4A; display: flex; flex-direction: column; }
+  .sidebar-header { padding: 24px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+  .sidebar-title { color: #FFF; font-size: 16px; font-weight: 700; }
+  .sidebar-sub { color: #8BA3C7; font-size: 11px; margin-top: 3px; letter-spacing: 1px; }
+  .sidebar-accent { width: 32px; height: 3px; background: #4A9B8F; margin-top: 10px; }
+  .sidebar-nav { padding: 16px 0; flex: 1; }
+  .nav-label { padding: 8px 20px 4px; font-size: 10px; color: #8BA3C7; letter-spacing: 1px; text-transform: uppercase; }
+  .nav-item { display: block; padding: 10px 20px; color: #B8C8DC; font-size: 14px; text-decoration: none; transition: all 0.2s; }
+  .nav-item:hover { background: rgba(74,155,143,0.1); color: #FFF; }
+  .nav-item.active { background: rgba(74,155,143,0.15); color: #FFF; border-left: 3px solid #4A9B8F; }
+  .sidebar-footer { padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1); color: #8BA3C7; font-size: 12px; }
+
+  /* Main */
+  .main { margin-left: 220px; padding: 32px; }
+  .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+  .page-title { font-size: 24px; font-weight: 700; color: #1A2B4A; }
+  .flash { background: #E6F5F3; color: #2C7A73; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; }
+  .flash.warn { background: #FEF0E7; color: #E05C00; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; border-bottom: 2px solid #E2E8F0; margin-bottom: 24px; flex-wrap: wrap; }
+  .tab-btn { padding: 10px 20px; border: none; background: none; font-size: 14px; color: #718096; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s; font-family: inherit; font-weight: 500; }
+  .tab-btn.active { color: #4A9B8F; border-bottom-color: #4A9B8F; }
+  .tab-btn:hover { color: #2D3748; }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+
+  /* Cards */
+  .card { background: #FFF; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); padding: 24px; margin-bottom: 20px; }
+  .card-title { font-size: 15px; font-weight: 600; color: #1A2B4A; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #EDF2F7; display: flex; align-items: center; gap: 8px; }
+  .badge-count { background: #4A9B8F; color: #FFF; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+
+  /* Form */
+  .form-group { margin-bottom: 18px; }
+  label { display: block; font-size: 13px; font-weight: 500; color: #4A5568; margin-bottom: 6px; }
+  .label-hint { font-size: 11px; color: #A0AEC0; font-weight: 400; margin-left: 6px; }
+  input[type=text], textarea, select {
+    width: 100%; padding: 9px 12px; border: 1px solid #E2E8F0; border-radius: 6px;
+    font-size: 14px; font-family: inherit; outline: none; transition: border-color 0.2s; color: #2D3748;
+  }
+  input[type=text]:focus, textarea:focus { border-color: #4A9B8F; box-shadow: 0 0 0 3px rgba(74,155,143,0.1); }
+  textarea { resize: vertical; min-height: 100px; line-height: 1.6; }
+  textarea.tall { min-height: 160px; }
+  textarea.short { min-height: 70px; }
+
+  /* Buttons */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; font-family: inherit; text-decoration: none; }
+  .btn-primary { background: #4A9B8F; color: #FFF; }
+  .btn-primary:hover { background: #3A8070; }
+  .btn-danger { background: #FFF0F0; color: #CC3333; border: 1px solid #FFC9C9; }
+  .btn-danger:hover { background: #FFE0E0; }
+  .btn-secondary { background: #EDF2F7; color: #4A5568; }
+  .btn-secondary:hover { background: #E2E8F0; }
+  .btn-sync { background: #2B6CB0; color: #FFF; }
+  .btn-sync:hover { background: #2558A0; }
+  .btn-sm { padding: 5px 12px; font-size: 12px; }
+
+  /* FAQ list */
+  .faq-item { border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px; background: #FAFAFA; }
+  .faq-item:hover { border-color: #CBD5E0; background: #FFF; }
+  .faq-q { font-weight: 600; color: #1A2B4A; margin-bottom: 6px; font-size: 14px; }
+  .faq-a { color: #4A5568; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+  .faq-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .faq-edit-form { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid #E2E8F0; }
+  .faq-num { display: inline-block; background: #E6F5F3; color: #2C7A73; border-radius: 4px; padding: 1px 8px; font-size: 11px; font-weight: 700; margin-right: 6px; }
+
+  /* Preview */
+  .prompt-preview { background: #1A2B4A; color: #A8C7E0; border-radius: 8px; padding: 20px; font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.7; white-space: pre-wrap; max-height: 500px; overflow-y: auto; }
+
+  /* Test */
+  .test-area { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .test-area { grid-template-columns: 1fr; } }
+  .test-response { background: #F7FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; min-height: 120px; font-size: 14px; line-height: 1.7; color: #2D3748; white-space: pre-wrap; }
+  .test-response.loading { color: #A0AEC0; font-style: italic; }
+  .test-response.error { color: #CC3333; background: #FFF0F0; border-color: #FFC9C9; }
+
+  /* Divider */
+  hr { border: none; border-top: 1px solid #EDF2F7; margin: 20px 0; }
+
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .row-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-title">機場接送管理</div>
+    <div class="sidebar-sub">AIRPORT TRANSFER SYSTEM</div>
+    <div class="sidebar-accent"></div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">功能選單</div>
+    <a href="/admin/ai" class="nav-item">AI 客服控制</a>
+    <a href="/admin/ai/config" class="nav-item active">AI 客服訓練設定</a>
+  </nav>
+  <div class="sidebar-footer">管理員後台<br><a href="/admin/logout" style="color:#8BA3C7;font-size:11px;text-decoration:none;">登出</a></div>
+</div>
+
+<main class="main">
+  <div class="page-header">
+    <div class="page-title">AI 客服訓練設定</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <form method="POST" action="/admin/ai/config/sync" onsubmit="return confirm('確定要從程式碼同步預設值嗎？這會覆蓋目前所有設定。')">
+        <button type="submit" class="btn btn-sync">⟳ 同步程式碼預設值</button>
+      </form>
+      <a href="/admin/ai" class="btn btn-secondary">← 返回控制台</a>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages() %}
+  {% if messages %}{% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}{% endif %}
+  {% endwith %}
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('basic', this)">基本設定</button>
+    <button class="tab-btn" onclick="switchTab('service', this)">服務資訊</button>
+    <button class="tab-btn" onclick="switchTab('faq', this)">FAQ 管理 <span class="badge-count">{{ faqs|length }}</span></button>
+    <button class="tab-btn" onclick="switchTab('principles', this)">回覆原則</button>
+    <button class="tab-btn" onclick="switchTab('preview', this)">預覽 & 測試</button>
+  </div>
+
+  <!-- Tab: 基本設定 -->
+  <div id="tab-basic" class="tab-pane active">
+    <div class="card">
+      <div class="card-title">AI 基本個性設定</div>
+      <form method="POST" action="/admin/ai/config/save">
+        <input type="hidden" name="ai_company_info" value="">
+        <input type="hidden" name="ai_pricing_info" value="">
+        <input type="hidden" name="ai_vehicles_info" value="">
+        <input type="hidden" name="ai_pickup_flow" value="">
+        <input type="hidden" name="ai_reply_principles" value="">
+        <input type="hidden" name="ai_capabilities" value="">
+
+        <div class="form-group">
+          <label>AI 客服名字 <span class="label-hint">客人看到的名字</span></label>
+          <input type="text" name="ai_name" value="{{ config.ai_name }}" placeholder="例：小飛" required>
+        </div>
+        <div class="form-group">
+          <label>AI 個性描述 <span class="label-hint">定義 AI 的說話風格與態度</span></label>
+          <textarea name="ai_personality" class="tall" placeholder="例：親切、有溫度，像朋友一樣，但仍保持專業...">{{ config.ai_personality }}</textarea>
+        </div>
+        <div class="form-group">
+          <label>AI 能做的事 <span class="label-hint">條列說明 AI 的職責範圍</span></label>
+          <textarea name="ai_capabilities" id="ai_capabilities_field" class="tall" placeholder="1. 回答機場接送相關問題&#10;2. 引導客人預約...">{{ config.ai_capabilities }}</textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">儲存基本設定</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Tab: 服務資訊 -->
+  <div id="tab-service" class="tab-pane">
+    <form method="POST" action="/admin/ai/config/save">
+      <input type="hidden" name="ai_name" value="">
+      <input type="hidden" name="ai_personality" value="">
+      <input type="hidden" name="ai_capabilities" value="">
+      <input type="hidden" name="ai_reply_principles" value="">
+
+      <div class="card">
+        <div class="card-title">費用資訊</div>
+        <div class="form-group">
+          <label>費用說明 <span class="label-hint">AI 回覆費用相關問題時參考此內容</span></label>
+          <textarea name="ai_pricing_info" class="tall" placeholder="- 基本車資依出發地區域與機場而定&#10;- 夜間費：...">{{ config.ai_pricing_info }}</textarea>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">車型說明</div>
+        <div class="form-group">
+          <label>車型資訊 <span class="label-hint">AI 介紹車款時使用此內容</span></label>
+          <textarea name="ai_vehicles_info" class="tall" placeholder="我們採不指定車款優惠方案...">{{ config.ai_vehicles_info }}</textarea>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">公司資訊</div>
+        <div class="form-group">
+          <label>公司基本資料 <span class="label-hint">客人詢問公司時 AI 的回答素材</span></label>
+          <textarea name="ai_company_info" class="tall" placeholder="- 公司名稱：...&#10;- 統一編號：...">{{ config.ai_company_info }}</textarea>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">接機流程說明</div>
+        <div class="form-group">
+          <label>接機流程 <span class="label-hint">客人問接機流程時的標準回覆</span></label>
+          <textarea name="ai_pickup_flow" class="tall" placeholder="我們流程是這樣，您落地 20 分鐘左右時...">{{ config.ai_pickup_flow }}</textarea>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary">儲存服務資訊</button>
+    </form>
+  </div>
+
+  <!-- Tab: FAQ 管理 -->
+  <div id="tab-faq" class="tab-pane">
+    <!-- 新增 FAQ -->
+    <div class="card">
+      <div class="card-title">新增 FAQ</div>
+      <form method="POST" action="/admin/ai/config/faq/add">
+        <div class="form-group">
+          <label>問題（Q）</label>
+          <input type="text" name="q" placeholder="例：機場接送要多久前預約？" required>
+        </div>
+        <div class="form-group">
+          <label>回答（A）</label>
+          <textarea name="a" class="short" placeholder="例：建議最晚兩周前先預約..." required></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">＋ 新增</button>
+      </form>
+    </div>
+
+    <!-- FAQ 清單 -->
+    <div class="card">
+      <div class="card-title">FAQ 清單 <span class="badge-count">{{ faqs|length }} 筆</span></div>
+      {% if faqs %}
+        {% for faq in faqs %}
+        <div class="faq-item" id="faq-item-{{ loop.index0 }}">
+          <div class="faq-q">
+            <span class="faq-num">Q{{ loop.index }}</span>{{ faq.q }}
+          </div>
+          <div class="faq-a">{{ faq.a }}</div>
+          <div class="faq-actions">
+            <button class="btn btn-secondary btn-sm" onclick="toggleEdit({{ loop.index0 }})">✏ 編輯</button>
+            <form method="POST" action="/admin/ai/config/faq/{{ loop.index0 }}/delete" style="display:inline" onsubmit="return confirm('確定要刪除這筆 FAQ 嗎？')">
+              <button type="submit" class="btn btn-danger btn-sm">✕ 刪除</button>
+            </form>
+          </div>
+          <!-- 編輯表單 -->
+          <div class="faq-edit-form" id="faq-edit-{{ loop.index0 }}">
+            <form method="POST" action="/admin/ai/config/faq/{{ loop.index0 }}/edit">
+              <div class="form-group">
+                <label>問題（Q）</label>
+                <input type="text" name="q" value="{{ faq.q }}" required>
+              </div>
+              <div class="form-group">
+                <label>回答（A）</label>
+                <textarea name="a" class="short" required>{{ faq.a }}</textarea>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button type="submit" class="btn btn-primary btn-sm">儲存</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="toggleEdit({{ loop.index0 }})">取消</button>
+              </div>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p style="color:#A0AEC0;font-size:14px;">尚無 FAQ，請點上方「新增 FAQ」或按「同步程式碼預設值」載入預設 FAQ。</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Tab: 回覆原則 -->
+  <div id="tab-principles" class="tab-pane">
+    <div class="card">
+      <div class="card-title">回覆原則 <span class="label-hint" style="font-size:13px;font-weight:400;color:#718096">AI 必須遵守的規則，優先級最高</span></div>
+      <form method="POST" action="/admin/ai/config/save">
+        <input type="hidden" name="ai_name" value="">
+        <input type="hidden" name="ai_personality" value="">
+        <input type="hidden" name="ai_capabilities" value="">
+        <input type="hidden" name="ai_company_info" value="">
+        <input type="hidden" name="ai_pricing_info" value="">
+        <input type="hidden" name="ai_vehicles_info" value="">
+        <input type="hidden" name="ai_pickup_flow" value="">
+        <div class="form-group">
+          <label>回覆原則清單 <span class="label-hint">每行一條規則，AI 會嚴格遵守</span></label>
+          <textarea name="ai_reply_principles" style="min-height:280px" placeholder="- 全程使用繁體中文&#10;- 回覆要簡潔口語...">{{ config.ai_reply_principles }}</textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">儲存回覆原則</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Tab: 預覽 & 測試 -->
+  <div id="tab-preview" class="tab-pane">
+    <div class="card">
+      <div class="card-title">目前 System Prompt 預覽 <span class="label-hint" style="font-size:12px;color:#718096;font-weight:400">這是 AI 實際收到的完整指令</span></div>
+      <button class="btn btn-secondary btn-sm" style="margin-bottom:12px" onclick="loadPreview()">重新載入預覽</button>
+      <div class="prompt-preview" id="promptPreview">點擊「重新載入預覽」查看目前 System Prompt</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">即時測試 AI 回覆</div>
+      <div class="test-area">
+        <div>
+          <div class="form-group">
+            <label>輸入測試問題</label>
+            <textarea id="testInput" class="short" placeholder="例：你們的車費多少？有哪些車款？"></textarea>
+          </div>
+          <button class="btn btn-primary" onclick="testAI()">送出測試</button>
+          <div id="testStatus" style="font-size:12px;color:#A0AEC0;margin-top:8px"></div>
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;color:#4A5568;margin-bottom:6px">AI 回覆</label>
+          <div class="test-response" id="testResponse">等待測試中...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+// Tab switching
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+  // Save active tab in hash
+  location.hash = name;
+}
+
+// Restore tab from hash
+window.addEventListener('DOMContentLoaded', () => {
+  const hash = location.hash.replace('#', '');
+  if (hash) {
+    const btn = document.querySelector(`.tab-btn[onclick*="${hash}"]`);
+    if (btn) switchTab(hash, btn);
+  }
+});
+
+// FAQ edit toggle
+function toggleEdit(idx) {
+  const el = document.getElementById('faq-edit-' + idx);
+  el.style.display = el.style.display === 'block' ? 'none' : 'block';
+}
+
+// Load prompt preview
+function loadPreview() {
+  const el = document.getElementById('promptPreview');
+  el.textContent = '載入中...';
+  fetch('/admin/ai/config/preview')
+    .then(r => r.text())
+    .then(t => { el.textContent = t; })
+    .catch(e => { el.textContent = '載入失敗：' + e; });
+}
+
+// Test AI
+function testAI() {
+  const msg = document.getElementById('testInput').value.trim();
+  if (!msg) { alert('請輸入測試訊息'); return; }
+  const resp = document.getElementById('testResponse');
+  const status = document.getElementById('testStatus');
+  resp.className = 'test-response loading';
+  resp.textContent = 'AI 思考中...';
+  status.textContent = '送出中...';
+
+  const form = new FormData();
+  form.append('test_message', msg);
+
+  fetch('/admin/ai/test', { method: 'POST', body: form })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        resp.className = 'test-response error';
+        resp.textContent = '錯誤：' + data.error;
+        status.textContent = '';
+      } else {
+        resp.className = 'test-response';
+        resp.textContent = data.reply;
+        status.textContent = '回覆成功';
+      }
+    })
+    .catch(e => {
+      resp.className = 'test-response error';
+      resp.textContent = '連線錯誤：' + e;
+      status.textContent = '';
+    });
+}
+
+// Allow Ctrl+Enter to submit test
+document.getElementById('testInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) testAI();
+});
+</script>
+</body>
+</html>
