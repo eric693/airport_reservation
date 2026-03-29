@@ -617,6 +617,15 @@ def admin_visitors():
     visitors = LineVisitor.query.order_by(LineVisitor.last_seen.desc()).all()
     return render_template('admin/visitors.html', visitors=visitors)
 
+@app.route('/admin/visitors/cleanup', methods=['POST'])
+@admin_required
+def admin_visitors_cleanup():
+    cutoff = datetime.utcnow() - timedelta(days=1)
+    deleted = LineVisitor.query.filter(LineVisitor.last_seen < cutoff).delete()
+    db.session.commit()
+    flash(f'已清除 {deleted} 筆超過1天未活躍的訪客')
+    return redirect(url_for('admin_visitors'))
+
 @app.route('/admin/bot_mode', methods=['POST'])
 @admin_required
 def admin_set_bot_mode():
