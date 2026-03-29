@@ -5,62 +5,233 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI 客服控制</title>
 <style>
-  body { font-family: 'Segoe UI','PingFang TC',sans-serif; background:#F4F6F8; margin-left:220px; padding:32px; }
-  .card { background:#fff; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,0.07); padding:24px; margin-bottom:20px; }
-  h2 { color:#1A2B4A; margin-bottom:20px; }
-  h3 { color:#4A9B8F; margin-bottom:12px; font-size:15px; }
-  input[type=text] { padding:9px 12px; border:1px solid #E2E8F0; border-radius:6px; font-size:14px; width:320px; margin-right:8px; }
-  .btn { padding:9px 18px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer; border:none; }
-  .btn-pause { background:#E05C00; color:#fff; }
-  .btn-resume { background:#4A9B8F; color:#fff; }
-  .flash { background:#E6F5F3; color:#2C7A73; padding:12px 16px; border-radius:8px; margin-bottom:16px; font-size:14px; }
-  .uid-row { display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid #EDF2F7; font-size:13px; }
-  .uid-row:last-child { border-bottom:none; }
-  code { background:#EDF2F7; padding:2px 8px; border-radius:4px; font-size:12px; }
-  .empty { color:#A0AEC0; font-size:13px; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', sans-serif; background: #F4F6F8; color: #2D3748; }
+
+  .sidebar {
+    position: fixed; top: 0; left: 0; width: 220px; height: 100vh;
+    background: #1A2B4A; padding: 0;
+    display: flex; flex-direction: column;
+  }
+  .sidebar-header { padding: 24px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+  .sidebar-title { color: #FFFFFF; font-size: 16px; font-weight: 700; }
+  .sidebar-sub { color: #8BA3C7; font-size: 11px; margin-top: 3px; letter-spacing: 1px; }
+  .sidebar-accent { width: 32px; height: 3px; background: #4A9B8F; margin-top: 10px; }
+  .sidebar-nav { padding: 16px 0; flex: 1; }
+  .nav-label { padding: 8px 20px 4px; font-size: 10px; color: #8BA3C7; letter-spacing: 1px; text-transform: uppercase; }
+  .nav-item { display: block; padding: 10px 20px; color: #B8C8DC; font-size: 14px; text-decoration: none; transition: all 0.2s; }
+  .nav-item.active { background: rgba(74,155,143,0.15); color: #FFFFFF; border-left: 3px solid #4A9B8F; }
+  .sidebar-footer { padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1); color: #8BA3C7; font-size: 12px; }
+
+  .main { margin-left: 220px; padding: 32px; min-height: 100vh; }
+  .page-title { font-size: 24px; font-weight: 700; color: #1A2B4A; margin-bottom: 24px; }
+
+  .card { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); padding: 24px; margin-bottom: 20px; }
+  .card-title { font-size: 15px; font-weight: 600; color: #1A2B4A; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #EDF2F7; }
+
+  .flash { background: #E6F5F3; color: #2C7A73; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; }
+  .flash.error { background: #FFF0F0; color: #CC3333; }
+
+  label { display: block; font-size: 13px; color: #4A5568; margin-bottom: 6px; font-weight: 500; }
+  input[type=text], textarea {
+    width: 100%; padding: 9px 12px; border: 1px solid #E2E8F0; border-radius: 6px;
+    font-size: 14px; font-family: inherit; outline: none; transition: border-color 0.2s;
+  }
+  input[type=text]:focus, textarea:focus { border-color: #4A9B8F; }
+  textarea { resize: vertical; min-height: 90px; }
+
+  .form-row { margin-bottom: 14px; }
+  .form-inline { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .form-inline input[type=text] { flex: 1; min-width: 200px; }
+
+  .btn { padding: 9px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }
+  .btn-primary { background: #4A9B8F; color: #fff; }
+  .btn-primary:hover { background: #3A8070; }
+  .btn-pause { background: #E05C00; color: #fff; }
+  .btn-pause:hover { background: #C04E00; }
+  .btn-resume { background: #4A9B8F; color: #fff; }
+  .btn-resume:hover { background: #3A8070; }
+  .btn-sm { padding: 5px 12px; font-size: 12px; }
+
+  .checkbox-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; color: #4A5568; }
+  input[type=checkbox] { width: 15px; height: 15px; cursor: pointer; }
+
+  .uid-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #EDF2F7; font-size: 13px; }
+  .uid-row:last-child { border-bottom: none; }
+  code { background: #EDF2F7; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+  .empty { color: #A0AEC0; font-size: 13px; }
+
+  /* 訪客表格 */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: #F7FAFC; padding: 10px 14px; text-align: left; color: #718096; font-weight: 600; font-size: 11px; text-transform: uppercase; border-bottom: 1px solid #EDF2F7; }
+  td { padding: 10px 14px; border-bottom: 1px solid #EDF2F7; color: #2D3748; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #F7FAFC; }
+  .avatar { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
+  .avatar-placeholder { width: 30px; height: 30px; border-radius: 50%; background: #E2E8F0; display: inline-flex; align-items: center; justify-content: center; color: #A0AEC0; font-size: 13px; }
+  .search-input { padding: 7px 12px; border: 1px solid #E2E8F0; border-radius: 6px; font-size: 13px; outline: none; width: 260px; margin-bottom: 14px; }
+  .search-input:focus { border-color: #4A9B8F; }
+  .badge-paused { display: inline-block; background: #FEF0E7; color: #E05C00; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .btn-copy { background: #EDF2F7; color: #4A5568; border: none; padding: 4px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; }
+  .btn-copy:hover { background: #E2E8F0; }
 </style>
 </head>
 <body>
 
-{% with messages = get_flashed_messages() %}
-{% if messages %}
-  {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
-{% endif %}
-{% endwith %}
-
-<h2>AI 客服控制</h2>
-
-<div class="card">
-  <h3>手動暫停 / 恢復 AI（輸入 LINE User ID）</h3>
-  <form method="POST" action="/admin/ai/pause/direct" style="margin-bottom:12px">
-    <input type="text" name="line_user_id" placeholder="輸入 LINE User ID，例：Uxxxxxxxx" required>
-    <button type="submit" class="btn btn-pause">⏸ 暫停 AI</button>
-  </form>
-  <form method="POST" action="/admin/ai/resume/direct">
-    <input type="text" name="line_user_id" placeholder="輸入 LINE User ID，例：Uxxxxxxxx" required>
-    <button type="submit" class="btn btn-resume">▶ 恢復 AI</button>
-  </form>
+<div class="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-title">機場接送管理</div>
+    <div class="sidebar-sub">AIRPORT TRANSFER SYSTEM</div>
+    <div class="sidebar-accent"></div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">功能選單</div>
+    <a href="/admin/ai" class="nav-item active">AI 客服控制</a>
+  </nav>
+  <div class="sidebar-footer">管理員後台<br><a href="/admin/logout" style="color:#8BA3C7;font-size:11px;text-decoration:none;">登出</a></div>
 </div>
 
-<div class="card">
-  <h3>目前暫停 AI 的用戶（{{ paused|length }} 位）</h3>
-  {% if paused %}
-    {% for uid in paused %}
-    <div class="uid-row">
-      <code>{{ uid }}</code>
-      <form method="POST" action="/admin/ai/resume/direct">
-        <input type="hidden" name="line_user_id" value="{{ uid }}">
-        <input type="hidden" name="next" value="/admin/ai">
-        <button type="submit" class="btn btn-resume" style="padding:5px 12px;font-size:12px">▶ 恢復</button>
+<main class="main">
+  <div class="page-title">AI 客服控制</div>
+
+  {% with messages = get_flashed_messages() %}
+  {% if messages %}
+    {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
+  {% endif %}
+  {% endwith %}
+
+  <!-- 傳送訊息 -->
+  <div class="card">
+    <div class="card-title">傳送訊息給客人</div>
+    <form method="POST" action="/admin/ai/send_message">
+      <div class="form-row">
+        <label>LINE User ID</label>
+        <input type="text" name="line_user_id" id="msgUid" placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" required>
+      </div>
+      <div class="form-row">
+        <label>訊息內容</label>
+        <textarea name="message" placeholder="輸入要傳送給客人的訊息..." required></textarea>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+        <label class="checkbox-row" style="margin:0">
+          <input type="checkbox" name="release_human_mode" value="1">
+          傳送後恢復 AI 客服模式
+        </label>
+        <button type="submit" class="btn btn-primary">傳送訊息</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- 暫停 / 恢復 AI -->
+  <div class="card">
+    <div class="card-title">手動暫停 / 恢復 AI 客服</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <form method="POST" action="/admin/ai/pause/direct" style="display:flex;gap:8px;align-items:center;flex:1;min-width:280px">
+        <input type="text" name="line_user_id" placeholder="LINE User ID" required style="flex:1">
+        <button type="submit" class="btn btn-pause">⏸ 暫停 AI</button>
+      </form>
+      <form method="POST" action="/admin/ai/resume/direct" style="display:flex;gap:8px;align-items:center;flex:1;min-width:280px">
+        <input type="text" name="line_user_id" placeholder="LINE User ID" required style="flex:1">
+        <button type="submit" class="btn btn-resume">▶ 恢復 AI</button>
       </form>
     </div>
-    {% endfor %}
-  {% else %}
-    <div class="empty">目前沒有暫停 AI 的用戶</div>
-  {% endif %}
-</div>
+  </div>
 
-<a href="/admin" style="color:#4A9B8F;font-size:13px;">← 返回訂單管理</a>
+  <!-- 目前暫停中的用戶 -->
+  <div class="card">
+    <div class="card-title">目前暫停 AI 的用戶（{{ paused|length }} 位）</div>
+    {% if paused %}
+      {% for uid in paused %}
+      <div class="uid-row">
+        <code>{{ uid }}</code>
+        <div style="display:flex;gap:8px">
+          <button class="btn-copy btn-sm" onclick="fillMsgUid('{{ uid }}')">填入傳訊</button>
+          <form method="POST" action="/admin/ai/resume/direct" style="display:inline">
+            <input type="hidden" name="line_user_id" value="{{ uid }}">
+            <input type="hidden" name="next" value="/admin/ai">
+            <button type="submit" class="btn btn-resume btn-sm">▶ 恢復</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">目前沒有暫停 AI 的用戶</div>
+    {% endif %}
+  </div>
 
+  <!-- 訪客清單 -->
+  <div class="card">
+    <div class="card-title">訪客清單（共 {{ visitors|length }} 位）</div>
+    <input type="text" class="search-input" placeholder="搜尋名稱或 User ID..." oninput="filterVisitors(this.value)">
+    {% if visitors %}
+    <div style="overflow-x:auto">
+    <table id="visitorTable">
+      <thead>
+        <tr>
+          <th></th>
+          <th>顯示名稱</th>
+          <th>LINE User ID</th>
+          <th>訊息數</th>
+          <th>最後活躍</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in visitors %}
+        <tr>
+          <td>
+            {% if v.picture_url %}
+            <img src="{{ v.picture_url }}" class="avatar">
+            {% else %}
+            <div class="avatar-placeholder">👤</div>
+            {% endif %}
+          </td>
+          <td>
+            {{ v.display_name or '未知' }}
+            {% if v.line_user_id in paused %}
+            <span class="badge-paused">暫停中</span>
+            {% endif %}
+          </td>
+          <td><code>{{ v.line_user_id }}</code></td>
+          <td>{{ v.message_count }}</td>
+          <td>{{ v.last_seen.strftime('%m/%d %H:%M') }}</td>
+          <td style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn-copy btn-sm" onclick="fillMsgUid('{{ v.line_user_id }}')">填入傳訊</button>
+            <form method="POST" action="/admin/ai/pause/direct" style="display:inline">
+              <input type="hidden" name="line_user_id" value="{{ v.line_user_id }}">
+              <input type="hidden" name="next" value="/admin/ai">
+              <button type="submit" class="btn btn-pause btn-sm">⏸ 暫停</button>
+            </form>
+            <form method="POST" action="/admin/ai/resume/direct" style="display:inline">
+              <input type="hidden" name="line_user_id" value="{{ v.line_user_id }}">
+              <input type="hidden" name="next" value="/admin/ai">
+              <button type="submit" class="btn btn-resume btn-sm">▶ 恢復</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <div class="empty">尚無訪客紀錄</div>
+    {% endif %}
+  </div>
+</main>
+
+<script>
+function fillMsgUid(uid) {
+  document.getElementById('msgUid').value = uid;
+  document.getElementById('msgUid').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  document.getElementById('msgUid').focus();
+}
+
+function filterVisitors(kw) {
+  kw = kw.toLowerCase();
+  document.querySelectorAll('#visitorTable tbody tr').forEach(row => {
+    row.style.display = row.innerText.toLowerCase().includes(kw) ? '' : 'none';
+  });
+}
+</script>
 </body>
 </html>

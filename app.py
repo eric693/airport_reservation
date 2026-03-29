@@ -598,9 +598,9 @@ def admin_test_newebpay():
 @app.route('/admin/ai', methods=['GET'])
 @admin_required
 def admin_ai_control():
-    # 列出目前所有 human_mode 的用戶
     paused = [uid for uid, s in user_sessions.items() if s.get('step') == 'human_mode']
-    return render_template('admin/ai_control.html', paused=paused)
+    visitors = LineVisitor.query.order_by(LineVisitor.last_seen.desc()).all()
+    return render_template('admin/ai_control.html', paused=paused, visitors=visitors)
 
 @app.route('/admin/visitors')
 @admin_required
@@ -632,9 +632,43 @@ def admin_ai_resume_direct():
         flash('請輸入有效的 LINE User ID')
     return redirect(next_url)
 
+@app.route('/admin/ai/send_message', methods=['POST'])
+@admin_required
+def admin_ai_send_message():
+    """直接輸入 LINE User ID 傳送訊息給客人"""
+    uid = request.form.get('line_user_id', '').strip()
+    msg = request.form.get('message', '').strip()
+    release = request.form.get('release_human_mode') == '1'
+    if not uid or not msg:
+        flash('請填寫 LINE User ID 與訊息內容')
+        return redirect(url_for('admin_ai_control'))
+    try:
+        full_msg = f'【客服回覆】\n\n{msg}'
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).push_message(
+                PushMessageRequest(
+                    to=uid,
+                    messages=[TextMessage(text=full_msg)]
+                )
+            )
+        if release:
+            user_sessions[uid] = {'step': 'ai_chat'}
+            flash(f'訊息已發送，已恢復 AI 客服（{uid[:16]}）')
+        else:
+            flash(f'訊息已成功發送給 {uid[:16]}')
+    except Exception as e:
+        app.logger.error(f'admin_ai_send_message error: {e}')
+        flash(f'發送失敗：{str(e)[:150]}')
+    return redirect(url_for('admin_ai_control'))
+
 @app.route('/admin')
 @admin_required
 def admin_index():
+    return redirect(url_for('admin_ai_control'))
+
+@app.route('/admin/_orders')
+@admin_required
+def admin_index_full():
     sort  = request.args.get('sort', 'booking_date')
     order_dir = request.args.get('dir', 'asc')
     status_filter = request.args.get('status', '')
