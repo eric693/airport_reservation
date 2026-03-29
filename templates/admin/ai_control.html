@@ -86,15 +86,19 @@
   </div>
   <nav class="sidebar-nav">
     <div class="nav-label">功能選單</div>
+    {% if bot_mode != 'ai_only' %}
     <a href="/admin" class="nav-item">訂單管理</a>
     <a href="/admin/drivers" class="nav-item">司機管理</a>
     <a href="/admin/vehicles" class="nav-item">車型管理</a>
     <a href="/admin/airports" class="nav-item">機場管理</a>
     <a href="/admin/dispatch" class="nav-item">搶單管理</a>
+    {% endif %}
     <a href="/admin/ai" class="nav-item active">AI 客服控制</a>
     <a href="/admin/ai/config" class="nav-item">AI 客服訓練設定</a>
+    {% if bot_mode != 'ai_only' %}
     <a href="/admin/visitors" class="nav-item">訪客紀錄</a>
     <a href="/admin/pricing" class="nav-item">報價管理</a>
+    {% endif %}
   </nav>
   <div class="sidebar-footer">管理員後台<br><a href="/admin/logout" style="color:#8BA3C7;font-size:11px;text-decoration:none;">登出</a></div>
 </div>
