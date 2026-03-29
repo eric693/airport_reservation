@@ -86,8 +86,15 @@
   </div>
   <nav class="sidebar-nav">
     <div class="nav-label">功能選單</div>
+    <a href="/admin" class="nav-item">訂單管理</a>
+    <a href="/admin/drivers" class="nav-item">司機管理</a>
+    <a href="/admin/vehicles" class="nav-item">車型管理</a>
+    <a href="/admin/airports" class="nav-item">機場管理</a>
+    <a href="/admin/dispatch" class="nav-item">搶單管理</a>
     <a href="/admin/ai" class="nav-item active">AI 客服控制</a>
     <a href="/admin/ai/config" class="nav-item">AI 客服訓練設定</a>
+    <a href="/admin/visitors" class="nav-item">訪客紀錄</a>
+    <a href="/admin/pricing" class="nav-item">報價管理</a>
   </nav>
   <div class="sidebar-footer">管理員後台<br><a href="/admin/logout" style="color:#8BA3C7;font-size:11px;text-decoration:none;">登出</a></div>
 </div>
@@ -112,14 +119,14 @@
         <input type="hidden" name="mode" value="full">
         <button type="submit" class="btn {% if bot_mode != 'ai_only' %}btn-primary{% else %}btn-secondary{% endif %}"
           style="{% if bot_mode != 'ai_only' %}background:#4A9B8F;color:#fff;{% else %}background:#EDF2F7;color:#4A5568;{% endif %}">
-          ✅ 全功能模式
+          全功能模式
         </button>
       </form>
       <form method="POST" action="/admin/bot_mode">
         <input type="hidden" name="mode" value="ai_only">
         <button type="submit" class="btn {% if bot_mode == 'ai_only' %}btn-primary{% else %}btn-secondary{% endif %}"
           style="{% if bot_mode == 'ai_only' %}background:#E05C00;color:#fff;{% else %}background:#EDF2F7;color:#4A5568;{% endif %}">
-          🤖 純AI客服模式
+          純AI客服模式
         </button>
       </form>
     </div>
