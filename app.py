@@ -2362,23 +2362,23 @@ def _handle_message_inner(event):
         )
         return
 
-    if text in ['預約', '訂車', '機場接送', '開始預約']:
-        if get_bot_mode() == 'ai_only':
-            user_sessions[user_id] = {'step': 'ai_chat'}
-            reply_text(event.reply_token, '目前預約功能暫停服務，有任何問題歡迎直接詢問客服小飛 ✈️')
-        else:
-            user_sessions[user_id] = {'step': 'choose_service'}
-            send_service_menu(event.reply_token)
-        return
+    # if text in ['預約', '訂車', '機場接送', '開始預約']:  # 暫時關閉預約關鍵字觸發
+    #     if get_bot_mode() == 'ai_only':
+    #         user_sessions[user_id] = {'step': 'ai_chat'}
+    #         reply_text(event.reply_token, '目前預約功能暫停服務，有任何問題歡迎直接詢問客服小飛 ✈️')
+    #     else:
+    #         user_sessions[user_id] = {'step': 'choose_service'}
+    #         send_service_menu(event.reply_token)
+    #     return
 
-    if text in ['報價', '我要報價', '查詢報價', '快速報價']:
-        if get_bot_mode() == 'ai_only':
-            user_sessions[user_id] = {'step': 'ai_chat'}
-            reply_text(event.reply_token, '目前報價功能暫停服務，有任何問題歡迎直接詢問客服小飛 ✈️')
-        else:
-            user_sessions[user_id] = {'step': 'quote_service'}
-            send_quote_service_menu(event.reply_token)
-        return
+    # if text in ['報價', '我要報價', '查詢報價', '快速報價']:  # 暫時關閉報價關鍵字觸發
+    #     if get_bot_mode() == 'ai_only':
+    #         user_sessions[user_id] = {'step': 'ai_chat'}
+    #         reply_text(event.reply_token, '目前報價功能暫停服務，有任何問題歡迎直接詢問客服小飛 ✈️')
+    #     else:
+    #         user_sessions[user_id] = {'step': 'quote_service'}
+    #         send_quote_service_menu(event.reply_token)
+    #     return
 
     if text == '查詢訂單':
         if get_bot_mode() == 'ai_only':
@@ -2392,7 +2392,7 @@ def _handle_message_inner(event):
     if step == 'human_mode':
         # 真人客服模式：AI 靜默，客人輸入「預約」可重新進入預約流程
         if get_bot_mode() != 'ai_only':
-            if any(kw in text for kw in ['預約', '訂車', '我要訂', '我想訂', '幫我訂']):
+            if any(kw in text for kw in ['訂車', '我要訂', '我想訂', '幫我訂']):  # 已移除「預約」關鍵字
                 user_sessions[user_id] = {'step': 'choose_service'}
                 reply_text(event.reply_token, '好的！幫您切換到預約流程。')
                 send_service_menu(event.reply_token)
@@ -2404,7 +2404,7 @@ def _handle_message_inner(event):
 
     if step == 'ai_chat':
         if get_bot_mode() != 'ai_only':
-            if any(kw in text for kw in ['預約', '訂車', '我要訂', '我想訂', '幫我訂']):
+            if any(kw in text for kw in ['訂車', '我要訂', '我想訂', '幫我訂']):  # 已移除「預約」關鍵字
                 user_sessions[user_id] = {'step': 'choose_service'}
                 reply_text(event.reply_token, '好的！幫您切換到預約流程。')
                 send_service_menu(event.reply_token)
