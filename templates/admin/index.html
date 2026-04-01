@@ -149,7 +149,7 @@
   <div class="card">
     <div class="card-header">
       <div class="card-title">所有訂單</div>
-      <form method="GET" action="/admin" id="filterForm">
+      <form method="GET" action="/admin/_orders" id="filterForm">
       <div class="filter-bar">
         <input class="search-input" type="text" id="searchInput" placeholder="搜尋姓名、電話、訂單號...">
         <select class="filter-select" id="serviceFilter">
@@ -186,7 +186,7 @@
         {% macro sort_link(col, label) %}
           {% set new_dir = 'desc' if (sort == col and dir == 'asc') else 'asc' %}
           {% set arrow = '↑' if (sort == col and dir == 'asc') else ('↓' if (sort == col and dir == 'desc') else '↕') %}
-          <a href="/admin?sort={{ col }}&dir={{ new_dir }}&status={{ status_filter }}&date_from={{ date_from }}&date_to={{ date_to }}"
+          <a href="/admin/_orders?sort={{ col }}&dir={{ new_dir }}&status={{ status_filter }}&date_from={{ date_from }}&date_to={{ date_to }}"
              style="color:inherit;text-decoration:none;display:flex;align-items:center;gap:4px;white-space:nowrap">
             {{ label }} <span class="{{ 'sort-active' if sort==col else 'sort-inactive' }}">{{ arrow }}</span>
           </a>
