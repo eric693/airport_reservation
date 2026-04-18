@@ -135,7 +135,7 @@ handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
 ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin1234')
 ADMIN_LINE_USER_ID = os.environ.get('ADMIN_LINE_USER_ID', '')
-HUMAN_AGENT_LINE_ID = os.environ.get('HUMAN_AGENT_LINE_ID', 'rbf5256')
+HUMAN_AGENT_LINE_ID = os.environ.get('HUMAN_AGENT_LINE_ID', 'U8846266dd109dc88c238acdda92119f1')
 DRIVER_GROUP_ID     = os.environ.get('DRIVER_GROUP_ID', '')           # 司機搶單群組 ID  # 真人客服 LINE ID
 SUPPORT_GROUP_ID    = os.environ.get('SUPPORT_GROUP_ID', '')             # 客服群組 ID（推播真人客服通知用）
 AUTO_DISPATCH = os.environ.get('AUTO_DISPATCH', '0') == '1'
