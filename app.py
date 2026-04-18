@@ -2344,12 +2344,11 @@ def _handle_message_inner(event):
     if text == '取消':
         user_sessions.pop(user_id, None)
         reply_text(event.reply_token, '已取消操作。')
-        send_main_menu(event.reply_token)
         return
 
     if text in ['開始', 'hi', 'Hi', 'HI', 'hello', 'Hello', '你好', '哈囉', '選單', '主選單', 'menu', 'Menu']:
         user_sessions.pop(user_id, None)
-        send_main_menu(event.reply_token)
+        reply_text(event.reply_token, '您好！有任何問題歡迎直接詢問，客服小飛 ✈️ 為您服務！')
         return
     
     if text in ['真人客服', '真人', '人工客服', '客服']:
@@ -2394,8 +2393,7 @@ def _handle_message_inner(event):
         if get_bot_mode() != 'ai_only':
             if any(kw in text for kw in ['訂車', '我要訂', '我想訂', '幫我訂']):  # 已移除「預約」關鍵字
                 user_sessions[user_id] = {'step': 'choose_service'}
-                reply_text(event.reply_token, '好的！幫您切換到預約流程。')
-                send_service_menu(event.reply_token)
+                reply_text(event.reply_token, '好的！幫您切換到預約流程，請告訴我您的需求。')
             elif any(kw in text for kw in ['查詢', '我的訂單', '訂單狀態']):
                 user_sessions[user_id] = {'step': 'query_name'}
                 reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
@@ -2406,8 +2404,7 @@ def _handle_message_inner(event):
         if get_bot_mode() != 'ai_only':
             if any(kw in text for kw in ['訂車', '我要訂', '我想訂', '幫我訂']):  # 已移除「預約」關鍵字
                 user_sessions[user_id] = {'step': 'choose_service'}
-                reply_text(event.reply_token, '好的！幫您切換到預約流程。')
-                send_service_menu(event.reply_token)
+                reply_text(event.reply_token, '好的！幫您切換到預約流程，請告訴我您的需求。')
                 return
             if any(kw in text for kw in ['查詢', '我的訂單', '訂單狀態']):
                 user_sessions[user_id] = {'step': 'query_name'}
@@ -2716,7 +2713,7 @@ def _handle_message_inner(event):
             ai_reply = ask_openai(user_id, text)
             reply_text(event.reply_token, ai_reply)
         else:
-            send_main_menu(event.reply_token)
+            reply_text(event.reply_token, '您好！有任何問題歡迎直接詢問，客服人員將盡快回覆您。')
 
 
 @handler.add(PostbackEvent)
