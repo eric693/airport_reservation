@@ -2352,7 +2352,7 @@ def _handle_message_inner(event):
         return
     
     if text in ['真人客服', '真人', '人工客服', '客服']:
-        notify_human_agent(user_id)
+        threading.Thread(target=notify_human_agent, args=(user_id,), daemon=True).start()
         reply_text(event.reply_token,
             '已通知真人客服！\n\n'
             '客服人員收到通知後將主動與您聯繫，請稍候。\n\n'
@@ -2839,7 +2839,7 @@ def _handle_postback_inner(event):
         reply_text(event.reply_token, '已取消預約。\n\n輸入「預約」重新開始。')
 
     elif data == 'request_human':
-        notify_human_agent(user_id)
+        threading.Thread(target=notify_human_agent, args=(user_id,), daemon=True).start()
         # 不進入 human_mode，AI 繼續回應
         reply_text(event.reply_token,
             '已通知真人客服！\n\n'
