@@ -3008,7 +3008,7 @@ def _handle_postback_inner(event):
 
 # ── Menu senders ─────────────────────────────────────────────────────
 def notify_human_agent(requester_line_id):
-    """推播通知真人客服有人點了真人客服按鈕（推播給群組 + 個人）"""
+    """推播通知真人客服有人點了真人客服按鈕（傳送給個人）"""
     try:
         # 取得客人顯示名稱
         display_name = '客人'
@@ -3025,24 +3025,21 @@ def notify_human_agent(requester_line_id):
             f"LINE ID：{requester_line_id}\n\n"
             f"客人點擊了「真人客服」按鈕，請盡快介入回覆！"
         )
-        targets = []
-        if SUPPORT_GROUP_ID:
-            targets.append(SUPPORT_GROUP_ID)   # 群組優先
-        if HUMAN_AGENT_LINE_ID:
-            targets.append(HUMAN_AGENT_LINE_ID) # 個人也通知
+
+        if not HUMAN_AGENT_LINE_ID:
+            app.logger.error('notify_human_agent: HUMAN_AGENT_LINE_ID 未設定')
+            return
 
         with ApiClient(configuration) as api_client:
-            api = MessagingApi(api_client)
-            for target in targets:
-                try:
-                    api.push_message(
-                        PushMessageRequest(
-                            to=target,
-                            messages=[TextMessage(text=text)]
-                        )
+            try:
+                MessagingApi(api_client).push_message(
+                    PushMessageRequest(
+                        to=HUMAN_AGENT_LINE_ID,
+                        messages=[TextMessage(text=text)]
                     )
-                except Exception as e:
-                    app.logger.error(f'notify_human_agent push error ({target}): {e}')
+                )
+            except Exception as e:
+                app.logger.error(f'notify_human_agent push error ({HUMAN_AGENT_LINE_ID}): {e}')
     except Exception as e:
         app.logger.error(f'notify_human_agent error: {e}')
 
