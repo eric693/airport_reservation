@@ -2460,7 +2460,6 @@ def _handle_message_inner(event):
                 session['step'] = 'input_time'
                 # 若標記需要推車程，在問時間前先 push（背景）
                 if session.pop('_push_travel_on_date', False):
-                    import threading
                     threading.Thread(target=_push_est_travel, args=(user_id, dict(session)), daemon=True).start()
                 user_sessions[user_id] = session
                 _reply_time_hint(event.reply_token, session)
@@ -2687,7 +2686,6 @@ def _handle_message_inner(event):
             except Exception as e:
                 app.logger.error(f'push stop and menu error: {e}')
 
-        import threading
         threading.Thread(target=_push_stop_and_menu, args=(user_id, notice_msg), daemon=True).start()
         # reply_token 回一個空白確認，讓 LINE 不報錯
         reply_text(event.reply_token, '正在計算距離，請稍候...')
