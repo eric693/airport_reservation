@@ -3009,15 +3009,16 @@ def _handle_postback_inner(event):
 # ── Menu senders ─────────────────────────────────────────────────────
 def notify_human_agent(requester_line_id):
     """推播通知真人客服有人點了真人客服按鈕（傳送給個人）"""
+    target_id = (os.environ.get('HUMAN_AGENT_LINE_ID') or 'U8846266dd109dc88c238acdda92119f1').strip()
+    print(f'[notify_human_agent] 觸發，target={target_id}, requester={requester_line_id}', flush=True)
     try:
-        # 取得客人顯示名稱
         display_name = '客人'
         try:
             with ApiClient(configuration) as api_client:
                 profile = MessagingApi(api_client).get_profile(requester_line_id)
                 display_name = profile.display_name
-        except Exception:
-            pass
+        except Exception as e:
+            print(f'[notify_human_agent] 取得名稱失敗: {e}', flush=True)
 
         text = (
             f"【真人客服通知】\n\n"
@@ -3026,21 +3027,20 @@ def notify_human_agent(requester_line_id):
             f"客人點擊了「真人客服」按鈕，請盡快介入回覆！"
         )
 
-        if not HUMAN_AGENT_LINE_ID:
-            app.logger.error('notify_human_agent: HUMAN_AGENT_LINE_ID 未設定')
-            return
-
         with ApiClient(configuration) as api_client:
             try:
                 MessagingApi(api_client).push_message(
                     PushMessageRequest(
-                        to=HUMAN_AGENT_LINE_ID,
+                        to=target_id,
                         messages=[TextMessage(text=text)]
                     )
                 )
+                print(f'[notify_human_agent] 推播成功 -> {target_id}', flush=True)
             except Exception as e:
-                app.logger.error(f'notify_human_agent push error ({HUMAN_AGENT_LINE_ID}): {e}')
+                print(f'[notify_human_agent] 推播失敗 -> {target_id}: {e}', flush=True)
+                app.logger.error(f'notify_human_agent push error ({target_id}): {e}')
     except Exception as e:
+        print(f'[notify_human_agent] 例外錯誤: {e}', flush=True)
         app.logger.error(f'notify_human_agent error: {e}')
 
 
