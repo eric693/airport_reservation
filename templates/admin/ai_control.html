@@ -235,7 +235,6 @@
           <td>{{ v.message_count }}</td>
           <td>{{ v.last_seen.strftime('%m/%d %H:%M') }}</td>
           <td style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn-copy btn-sm" onclick="fillMsgUid('{{ v.line_user_id }}')">填入傳訊</button>
             <form method="POST" action="/admin/ai/pause/direct" style="display:inline">
               <input type="hidden" name="line_user_id" value="{{ v.line_user_id }}">
               <input type="hidden" name="next" value="/admin/ai">
@@ -246,6 +245,7 @@
               <input type="hidden" name="next" value="/admin/ai">
               <button type="submit" class="btn btn-resume btn-sm">▶ 恢復</button>
             </form>
+            <button class="btn-copy btn-sm" onclick="fillMsgUid('{{ v.line_user_id }}')">填入傳訊</button>
           </td>
         </tr>
         {% endfor %}
