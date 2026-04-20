@@ -2423,7 +2423,7 @@ def _handle_message_inner(event):
     elif step == 'query_phone':
         orders = Order.query.filter_by(name=session.get('query_name'), phone=text)\
                             .order_by(Order.created_at.desc()).limit(5).all()
-        user_sessions.pop(user_id, None)
+        user_sessions[user_id] = {'step': 'human_mode'}
         if orders:
             send_order_query_result(event.reply_token, orders)
         else:
