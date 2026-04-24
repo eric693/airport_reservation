@@ -2410,13 +2410,8 @@ def _handle_message_inner(event):
                 user_sessions[user_id] = {'step': 'query_name'}
                 reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
                 return
-        def _ai_push(uid, msg):
-            ai_reply = ask_openai(uid, msg)
-            with ApiClient(configuration) as api_client:
-                MessagingApi(api_client).push_message(
-                    PushMessageRequest(to=uid, messages=[TextMessage(text=ai_reply)])
-                )
-        threading.Thread(target=_ai_push, args=(user_id, text), daemon=True).start()
+        ai_reply = ask_openai(user_id, text)
+        reply_text(event.reply_token, ai_reply)
         return
 
     if step == 'query_name':
@@ -2713,13 +2708,8 @@ def _handle_message_inner(event):
     else:
         if OPENAI_API_KEY:
             user_sessions[user_id] = {'step': 'ai_chat'}
-            def _ai_push_fallback(uid, msg):
-                ai_reply = ask_openai(uid, msg)
-                with ApiClient(configuration) as api_client:
-                    MessagingApi(api_client).push_message(
-                        PushMessageRequest(to=uid, messages=[TextMessage(text=ai_reply)])
-                    )
-            threading.Thread(target=_ai_push_fallback, args=(user_id, text), daemon=True).start()
+            ai_reply = ask_openai(user_id, text)
+            reply_text(event.reply_token, ai_reply)
         else:
             reply_text(event.reply_token, '您好！有任何問題歡迎直接詢問，客服人員將盡快回覆您。')
 
