@@ -195,6 +195,6 @@ class LineVisitor(db.Model):
     line_user_id = db.Column(db.String(100), unique=True, nullable=False)
     display_name = db.Column(db.String(100), default='')
     picture_url = db.Column(db.String(300), default='')
-    first_seen = db.Column(db.DateTime, default=datetime.utcnow)
-    last_seen = db.Column(db.DateTime, default=datetime.utcnow)
+    first_seen = db.Column(db.DateTime, default=lambda: datetime.utcnow() + timedelta(hours=8))
+    last_seen = db.Column(db.DateTime, default=lambda: datetime.utcnow() + timedelta(hours=8))
     message_count = db.Column(db.Integer, default=0)

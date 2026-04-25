@@ -2306,7 +2306,7 @@ def _handle_message_inner(event):
                 )
                 db.session.add(visitor)
             else:
-                visitor.last_seen = datetime.utcnow()
+                visitor.last_seen = datetime.utcnow() + timedelta(hours=8)
             visitor.message_count = (visitor.message_count or 0) + 1
             db.session.commit()
         except Exception as _e:
