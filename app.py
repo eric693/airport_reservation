@@ -3888,7 +3888,7 @@ def ask_openai(user_id, user_message, order_context=None):
         return data['choices'][0]['message']['content'].strip()
     except Exception as e:
         print(f'OpenAI error: {e}')
-        return '抱歉，AI 客服暫時無法回應，請稍後再試，或輸入「預約」開始預約流程。'
+        return '抱歉，AI 客服暫時無法回應，請稍後再試。'
 
 
 def send_main_menu(reply_token):
