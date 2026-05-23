@@ -21,6 +21,10 @@ services:
         sync: false
       - key: RENDER_EXTERNAL_URL
         sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
 
 databases:
   - name: airport-db

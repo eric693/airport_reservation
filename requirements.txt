@@ -6,3 +6,4 @@ requests==2.32.3
 gunicorn==22.0.0
 apscheduler==3.10.4
 pycryptodome==3.20.0
+anthropic>=0.40.0

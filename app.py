@@ -338,6 +338,7 @@ def issue_ezpay_invoice(order, invoice_type, carrier='', tax_id='', company_name
         app.logger.error(f'issue_ezpay_invoice error: {e}')
         return None
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
 
 user_sessions = {}
 
@@ -1013,24 +1014,10 @@ def admin_ai_test():
     msg = request.form.get('test_message', '').strip()
     if not msg:
         return jsonify({'error': '請輸入測試訊息'}), 400
-    if not OPENAI_API_KEY:
-        return jsonify({'error': 'OpenAI API Key 未設定，無法測試'}), 400
-    system = get_ai_system_prompt()
-    try:
-        resp = requests.post(
-            'https://api.openai.com/v1/chat/completions',
-            headers={'Authorization': f'Bearer {OPENAI_API_KEY}', 'Content-Type': 'application/json'},
-            json={'model': 'gpt-4o-mini', 'messages': [
-                {'role': 'system', 'content': system},
-                {'role': 'user', 'content': msg}
-            ], 'max_tokens': 400, 'temperature': 0.75},
-            timeout=15
-        )
-        data = resp.json()
-        reply = data['choices'][0]['message']['content'].strip()
-        return jsonify({'reply': reply})
-    except Exception as e:
-        return jsonify({'error': str(e)[:200]}), 500
+    if not OPENAI_API_KEY and not ANTHROPIC_API_KEY:
+        return jsonify({'error': 'OpenAI / Anthropic API Key 皆未設定，無法測試'}), 400
+    reply = ask_claude(None, msg)
+    return jsonify({'reply': reply})
 
 @app.route('/admin/ai/config/preview', methods=['GET'])
 @admin_required
@@ -2410,7 +2397,7 @@ def _handle_message_inner(event):
                 user_sessions[user_id] = {'step': 'query_name'}
                 reply_text(event.reply_token, '請輸入您預約時留的中文姓名：')
                 return
-        ai_reply = ask_openai(user_id, text)
+        ai_reply = ask_claude(user_id, text)
         reply_text(event.reply_token, ai_reply)
         return
 
@@ -2706,9 +2693,9 @@ def _handle_message_inner(event):
             reply_text(event.reply_token, f'日期格式錯誤，請重新輸入，例如：{datetime.now().strftime("%Y-%m-%d")}')
             
     else:
-        if OPENAI_API_KEY:
+        if OPENAI_API_KEY or ANTHROPIC_API_KEY:
             user_sessions[user_id] = {'step': 'ai_chat'}
-            ai_reply = ask_openai(user_id, text)
+            ai_reply = ask_claude(user_id, text)
             reply_text(event.reply_token, ai_reply)
         else:
             reply_text(event.reply_token, '您好！有任何問題歡迎直接詢問，客服人員將盡快回覆您。')
@@ -3867,27 +3854,41 @@ A：依法規定，四歲以下兒童需使用安全座椅。如需租借請在�
 - 若客人提到異動、更改、取消、退款、找真人、真人服務等，一律回答：「請輸入『真人客服』，稍後會有真人客服人員來服務您，請稍候！」
 """
 
-def ask_openai(user_id, user_message, order_context=None):
-    if not OPENAI_API_KEY:
+def ask_claude(user_id, user_message, order_context=None):
+    if not OPENAI_API_KEY and not ANTHROPIC_API_KEY:
         return '目前 AI 客服功能未啟用，請輸入「預約」開始預約，或輸入「查詢訂單」查詢訂單。'
     system = get_ai_system_prompt()
     if order_context:
         system += f"\n\n【客人訂單資料（僅供參考）】\n{order_context}"
-    messages = [
-        {'role': 'system', 'content': system},
-        {'role': 'user', 'content': user_message},
-    ]
+    if OPENAI_API_KEY:
+        try:
+            resp = requests.post(
+                'https://api.openai.com/v1/chat/completions',
+                headers={'Authorization': f'Bearer {OPENAI_API_KEY}', 'Content-Type': 'application/json'},
+                json={'model': 'gpt-4o-mini', 'messages': [
+                    {'role': 'system', 'content': system},
+                    {'role': 'user', 'content': user_message}
+                ], 'max_tokens': 400, 'temperature': 0.75},
+                timeout=15
+            )
+            return resp.json()['choices'][0]['message']['content'].strip()
+        except Exception as e:
+            print(f'OpenAI error: {e}')
+            if not ANTHROPIC_API_KEY:
+                return '抱歉，AI 客服暫時無法回應，請稍後再試。'
+            print('Falling back to Anthropic...')
     try:
-        resp = requests.post(
-            'https://api.openai.com/v1/chat/completions',
-            headers={'Authorization': f'Bearer {OPENAI_API_KEY}', 'Content-Type': 'application/json'},
-            json={'model': 'gpt-4o-mini', 'messages': messages, 'max_tokens': 400, 'temperature': 0.75},
-            timeout=15
+        import anthropic
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        message = client.messages.create(
+            model='claude-haiku-4-5-20251001',
+            max_tokens=400,
+            system=system,
+            messages=[{'role': 'user', 'content': user_message}]
         )
-        data = resp.json()
-        return data['choices'][0]['message']['content'].strip()
+        return message.content[0].text.strip()
     except Exception as e:
-        print(f'OpenAI error: {e}')
+        print(f'Claude error: {e}')
         return '抱歉，AI 客服暫時無法回應，請稍後再試。'
 
 
