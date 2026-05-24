@@ -459,6 +459,10 @@ def admin_required(f):
     return decorated
 
 
+@app.route('/')
+def index():
+    return redirect(url_for('admin_login'))
+
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     error = None
