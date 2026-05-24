@@ -184,7 +184,7 @@ def newebpay_decrypt(trade_info_enc: str) -> dict:
         return {}
 
 def build_newebpay_form(order_id: int, line_user_id: str, amt: int = NEWEBPAY_DEPOSIT) -> str:
-    base_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://airport-reservation.onrender.com')
+    base_url = os.environ.get('BASE_URL', 'https://airport-reservation.crownai.ink')
     # 動態取得付款方式設定
     try:
         _pm_str = SiteSetting.get('payment_methods', 'CREDIT,WEBATM,VACC')
@@ -357,7 +357,7 @@ CHILD_SEATS = {
 
 # ── Keep-alive ──────────────────────────────────────────────────────
 def keep_alive():
-    url = os.environ.get('RENDER_EXTERNAL_URL', '')
+    url = os.environ.get('BASE_URL', '')
     if url:
         while True:
             try:
@@ -4187,7 +4187,7 @@ def save_order(reply_token, session, user_id):
         db.session.commit()
         order_id = order.id
 
-        base_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://airport-reservation.onrender.com')
+        base_url = os.environ.get('BASE_URL', 'https://airport-reservation.crownai.ink')
         pay_url = f'{base_url}/pay/{order_id}'
 
     bubble = {
