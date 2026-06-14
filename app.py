@@ -3864,35 +3864,35 @@ def ask_claude(user_id, user_message, order_context=None):
     system = get_ai_system_prompt()
     if order_context:
         system += f"\n\n【客人訂單資料（僅供參考）】\n{order_context}"
-    if OPENAI_API_KEY:
+    if ANTHROPIC_API_KEY:
         try:
-            resp = requests.post(
-                'https://api.openai.com/v1/chat/completions',
-                headers={'Authorization': f'Bearer {OPENAI_API_KEY}', 'Content-Type': 'application/json'},
-                json={'model': 'gpt-4o-mini', 'messages': [
-                    {'role': 'system', 'content': system},
-                    {'role': 'user', 'content': user_message}
-                ], 'max_tokens': 400, 'temperature': 0.75},
-                timeout=15
+            import anthropic
+            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            message = client.messages.create(
+                model='claude-haiku-4-5-20251001',
+                max_tokens=400,
+                system=system,
+                messages=[{'role': 'user', 'content': user_message}]
             )
-            return resp.json()['choices'][0]['message']['content'].strip()
+            return message.content[0].text.strip()
         except Exception as e:
-            print(f'OpenAI error: {e}')
-            if not ANTHROPIC_API_KEY:
+            print(f'Claude error: {e}')
+            if not OPENAI_API_KEY:
                 return '抱歉，AI 客服暫時無法回應，請稍後再試。'
-            print('Falling back to Anthropic...')
+            print('Falling back to OpenAI...')
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        message = client.messages.create(
-            model='claude-haiku-4-5-20251001',
-            max_tokens=400,
-            system=system,
-            messages=[{'role': 'user', 'content': user_message}]
+        resp = requests.post(
+            'https://api.openai.com/v1/chat/completions',
+            headers={'Authorization': f'Bearer {OPENAI_API_KEY}', 'Content-Type': 'application/json'},
+            json={'model': 'gpt-4o-mini', 'messages': [
+                {'role': 'system', 'content': system},
+                {'role': 'user', 'content': user_message}
+            ], 'max_tokens': 400, 'temperature': 0.75},
+            timeout=15
         )
-        return message.content[0].text.strip()
+        return resp.json()['choices'][0]['message']['content'].strip()
     except Exception as e:
-        print(f'Claude error: {e}')
+        print(f'OpenAI error: {e}')
         return '抱歉，AI 客服暫時無法回應，請稍後再試。'
 
 
