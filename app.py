@@ -3880,20 +3880,21 @@ def ask_claude(user_id, user_message, order_context=None):
             if not OPENAI_API_KEY:
                 return '抱歉，AI 客服暫時無法回應，請稍後再試。'
             print('Falling back to OpenAI...')
-    try:
-        resp = requests.post(
-            'https://api.openai.com/v1/chat/completions',
-            headers={'Authorization': f'Bearer {OPENAI_API_KEY}', 'Content-Type': 'application/json'},
-            json={'model': 'gpt-4o-mini', 'messages': [
-                {'role': 'system', 'content': system},
-                {'role': 'user', 'content': user_message}
-            ], 'max_tokens': 400, 'temperature': 0.75},
-            timeout=15
-        )
-        return resp.json()['choices'][0]['message']['content'].strip()
-    except Exception as e:
-        print(f'OpenAI error: {e}')
-        return '抱歉，AI 客服暫時無法回應，請稍後再試。'
+    for attempt in range(2):
+        try:
+            resp = requests.post(
+                'https://api.openai.com/v1/chat/completions',
+                headers={'Authorization': f'Bearer {OPENAI_API_KEY}', 'Content-Type': 'application/json'},
+                json={'model': 'gpt-4o-mini', 'messages': [
+                    {'role': 'system', 'content': system},
+                    {'role': 'user', 'content': user_message}
+                ], 'max_tokens': 400, 'temperature': 0.75},
+                timeout=12
+            )
+            return resp.json()['choices'][0]['message']['content'].strip()
+        except Exception as e:
+            print(f'OpenAI error (attempt {attempt + 1}): {e}')
+    return '抱歉，AI 客服暫時無法回應，請稍後再試。'
 
 
 def send_main_menu(reply_token):
